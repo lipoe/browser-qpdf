@@ -48,14 +48,20 @@ export interface ImageInfo {
 }
 
 /**
- * Metadata fields for stream replacement. All fields are optional during replacement;
- * omitted fields preserve the original values.
+ * Metadata fields for stream replacement. All fields are optional during
+ * replacement; omit a field to keep its original value. Provided values are
+ * validated, invalid ones fail with `INVALID_INPUT`.
  */
 export interface ImageMetadata {
+    /** New /Width in pixels: integer from 1 to 2^31-1 */
     width: number;
+    /** New /Height in pixels: integer from 1 to 2^31-1 */
     height: number;
+    /** New /BitsPerComponent (e.g. 8): integer from 1 to 2^31-1 */
     bitsPerComponent: number;
+    /** New /ColorSpace name, with or without leading slash (e.g. "DeviceRGB"); not empty */
     colorSpace: string;
+    /** New /Filter name, with or without leading slash (e.g. "DCTDecode"); not empty */
     filter: string;
 }
 

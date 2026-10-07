@@ -493,7 +493,7 @@ describe('PDF Writing', () => {
         // Replace a stream
         const replaceResult = doc.value.replaceImageStream(
             5, 0, new Uint8Array([10, 20, 30]),
-            { width: 1, height: 1, bitsPerComponent: 8, colorSpace: '/DeviceRGB', filter: '' }
+            { width: 1, height: 1, bitsPerComponent: 8, colorSpace: '/DeviceRGB' }
         );
         expect(replaceResult.ok).toBe(true);
 
@@ -705,7 +705,6 @@ describe('Integration-style: Load, Replace, Write workflow', () => {
             height: 100,
             bitsPerComponent: 8,
             colorSpace: '/DeviceRGB',
-            filter: '',
         });
         expect(replaceResult.ok).toBe(true);
 

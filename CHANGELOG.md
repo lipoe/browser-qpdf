@@ -2,9 +2,10 @@
 
 ## 0.2.0
 
-Backward compatible for code that calls the API with the documented types:
-unencrypted PDFs behave as in 0.1.0, existing error messages are unchanged,
-`writePdf()` without options keeps the encryption.
+Mostly backward compatible: unencrypted PDFs behave as in 0.1.0, existing
+error messages are unchanged, `writePdf()` without options keeps the
+encryption. Check the **Compatibility** entry under "Changed": `0` and empty
+strings in `replaceImageStream` metadata are now rejected.
 
 Type-level note: the failure branch of `Result<T>` now requires `code`. Code
 that only reads results is unaffected; code that *creates* failure results
@@ -25,6 +26,13 @@ typed as `Result<T>` (e.g. test doubles) must add a `code`.
   e.g. from plain JavaScript: `getImages({ recursive: 'false' })` used to
   enumerate recursively, `replaceImageStream(..., { width: '5' })` or
   `{ height: 1.5 }` were silently converted.
+- **Compatibility:** `replaceImageStream` metadata no longer accepts `0` for
+  `width` / `height` / `bitsPerComponent` or empty strings (also `'/'`) for
+  `colorSpace` / `filter`. In 0.1.0 these values were silently treated as
+  "keep the original value" (an undocumented internal marker). They now fail
+  with `INVALID_INPUT`. **Migration:** omit the field instead, e.g.
+  `{ filter: '' }` -> `{}`. This also affects TypeScript callers, because
+  the types allow these values.
 
 ### Fixed
 - AES-256 PDFs could not be opened at all (also owner-password-only ones),

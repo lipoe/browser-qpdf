@@ -162,15 +162,30 @@ function validateMetadata(metadata?: Partial<ImageMetadata>): Result<never> | un
         if (typeof value !== 'number' || !Number.isInteger(value))
             return invalidInput(`Invalid metadata: ${field} must be an integer`);
         if (value < 0) return invalidInput(`Invalid metadata: ${field} must not be negative`);
+        // 0 is the wire format for "keep original" and never a valid value
+        if (value === 0)
+            return invalidInput(`Invalid metadata: ${field} must not be 0 (omit it to keep the original)`);
         if (!isWrapperInteger(value))
             return invalidInput(`Invalid metadata: ${field} must not exceed ${MAX_INT32}`);
     }
     for (const field of NAME_METADATA_FIELDS) {
         const value: unknown = metadata[field];
-        if (value !== undefined && typeof value !== 'string')
+        if (value === undefined) continue;
+        if (typeof value !== 'string')
             return invalidInput(`Invalid metadata: ${field} must be a string`);
+        // '' is the wire format for "keep original" and never a valid name
+        if (toWrapperName(value) === '')
+            return invalidInput(`Invalid metadata: ${field} must not be empty (omit it to keep the original)`);
     }
     return undefined;
+}
+
+/**
+ * PDF name as the C++ wrapper expects it: without leading slash (the wrapper
+ * adds it). Accepts names with or without slash.
+ */
+function toWrapperName(name: string): string {
+    return name.startsWith('/') ? name.slice(1) : name;
 }
 
 /**
@@ -273,18 +288,14 @@ export async function createQpdfImageStreams(
                             validateObjectRef(objId, generation) ?? validateMetadata(metadata);
                         if (invalid) return invalid;
 
-                        // Build metadata object for WASM:
-                        // 0 for integers and empty string for strings means "preserve original"
-                        // Normalize: strip leading slash from filter/colorSpace if provided,
-                        // the C++ wrapper adds the PDF name prefix automatically.
-                        const normalizeName = (v: string) => (v.startsWith('/') ? v.slice(1) : v);
-
+                        // Wire format for the C++ wrapper: 0 / '' mean "keep original".
+                        // Validation guarantees that provided values are never 0 / ''.
                         const wasmMetadata = {
                             width: metadata?.width ?? 0,
                             height: metadata?.height ?? 0,
                             bitsPerComponent: metadata?.bitsPerComponent ?? 0,
-                            colorSpace: metadata?.colorSpace ? normalizeName(metadata.colorSpace) : '',
-                            filter: metadata?.filter ? normalizeName(metadata.filter) : '',
+                            colorSpace: metadata?.colorSpace ? toWrapperName(metadata.colorSpace) : '',
+                            filter: metadata?.filter ? toWrapperName(metadata.filter) : '',
                         };
 
                         return callRaw(

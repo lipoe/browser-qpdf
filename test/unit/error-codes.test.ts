@@ -315,6 +315,10 @@ describe('Argument type validation (INVALID_INPUT, WASM not called)', () => {
         [{ bitsPerComponent: NaN }, 'Invalid metadata: bitsPerComponent must be an integer'],
         [{ width: -1 }, 'Invalid metadata: width must not be negative'],
         [{ height: 2 ** 31 }, 'Invalid metadata: height must not exceed 2147483647'],
+        [{ width: 0 }, 'Invalid metadata: width must not be 0 (omit it to keep the original)'],
+        [{ bitsPerComponent: 0 }, 'Invalid metadata: bitsPerComponent must not be 0 (omit it to keep the original)'],
+        [{ colorSpace: '' }, 'Invalid metadata: colorSpace must not be empty (omit it to keep the original)'],
+        [{ filter: '/' }, 'Invalid metadata: filter must not be empty (omit it to keep the original)'],
         [{ colorSpace: 5 }, 'Invalid metadata: colorSpace must be a string'],
         [{ filter: {} }, 'Invalid metadata: filter must be a string'],
     ])('replaceImageStream metadata %j', (metadata, error) => {
@@ -329,7 +333,7 @@ describe('Argument type validation (INVALID_INPUT, WASM not called)', () => {
     it.each([
         [undefined],
         [{}],
-        [{ width: 0, height: 10, bitsPerComponent: 8, colorSpace: '/DeviceRGB', filter: 'DCTDecode' }],
+        [{ width: 1, height: 10, bitsPerComponent: 8, colorSpace: '/DeviceRGB', filter: 'DCTDecode' }],
     ])('replaceImageStream accepts valid metadata %j', (metadata) => {
         expect(doc.replaceImageStream(1, 0, new Uint8Array(1), metadata as never)).toEqual({
             ok: true,

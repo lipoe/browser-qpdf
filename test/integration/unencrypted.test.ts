@@ -246,6 +246,13 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             expect(doc.getImageStreamData(2 ** 31 - 1, 0)).toEqual(
                 invalid('Object 2147483647 0 is not a stream')
             );
+            // 0 / '' were the internal "keep original" markers and silently ignored
+            expect(doc.replaceImageStream(image.objId, 0, new Uint8Array(1), { width: 0 })).toEqual(
+                invalid('Invalid metadata: width must not be 0 (omit it to keep the original)')
+            );
+            expect(doc.replaceImageStream(image.objId, 0, new Uint8Array(1), { colorSpace: '' })).toEqual(
+                invalid('Invalid metadata: colorSpace must not be empty (omit it to keep the original)')
+            );
             // the document is unchanged by rejected calls
             expect(imagesOf(doc)).toEqual([image]);
             doc.close();

@@ -291,15 +291,16 @@ Read raw (compressed) image stream data.
 
 ### `PdfDocument.replaceImageStream(objId, generation, data, metadata?): Result<void>`
 
-Replace image stream content. Omitted metadata fields preserve original values.
+Replace image stream content. Omit a metadata field to keep its original value.
 
-Metadata fields:
-- `width` / `height` — new pixel dimensions
-- `bitsPerComponent` — bits per color component (e.g. 8)
-- `colorSpace` — PDF color space name without leading slash (e.g. `'DeviceRGB'`, `'DeviceGray'`)
-- `filter` — PDF filter name without leading slash (e.g. `'DCTDecode'` for JPEG, `'FlateDecode'` for zlib)
+Metadata fields (all optional):
+- `width` / `height` — new pixel dimensions, integer from 1 to 2^31-1
+- `bitsPerComponent` — bits per color component (e.g. 8), integer from 1 to 2^31-1
+- `colorSpace` — PDF color space name (e.g. `'DeviceRGB'`, `'DeviceGray'`), not empty
+- `filter` — PDF filter name (e.g. `'DCTDecode'` for JPEG, `'FlateDecode'` for zlib), not empty
 
 Both `filter` and `colorSpace` accept values with or without a leading `/` — the library normalizes automatically.
+Other values (wrong type, `0`, empty names, out of range) fail with `INVALID_INPUT`.
 
 ### `PdfDocument.isEncrypted(): Result<boolean>`
 
