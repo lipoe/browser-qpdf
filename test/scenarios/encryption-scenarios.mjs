@@ -157,7 +157,7 @@ export function observeEncryptedFixture(api, bytes, sourceBytes, fixture) {
             );
         }
 
-        // Compression path: replace the first image, then write (default options)
+        // Replace the first image, then write (default options)
         const target = images.value[0];
         const replacement = new Uint8Array(sourceImages[0].length).fill(0x42);
         observation.opened.replaceImageStream = outcome(
@@ -173,7 +173,7 @@ export function observeEncryptedFixture(api, bytes, sourceBytes, fixture) {
             );
         }
 
-        // Compression and decryption combined
+        // Replace and decrypt combined
         const replacedDecrypted = doc.writePdf({ preserveEncryption: false });
         observation.opened.writePdfAfterReplaceDecrypted = outcome(replacedDecrypted);
         if (replacedDecrypted.ok) {

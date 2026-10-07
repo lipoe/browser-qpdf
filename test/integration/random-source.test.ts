@@ -7,12 +7,8 @@
 
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import { createQpdfImageStreams, type QpdfImageStreams } from '../../src/index.js';
-import { loadFixture } from './helpers.js';
+import { loadFixture, unwrap } from './helpers.js';
 
-function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: string }): T {
-    if (!result.ok) throw new Error(`unexpected error result: ${result.error}`);
-    return result.value;
-}
 
 describe('Random data source (real WASM)', () => {
     let api: QpdfImageStreams;

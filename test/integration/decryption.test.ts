@@ -11,7 +11,7 @@ import {
     type Result,
 } from '../../src/index.js';
 import { containsEncryptDict } from '../scenarios/encryption-scenarios.mjs';
-import { loadFixture, pageCount, readJson } from './helpers.js';
+import { loadFixture, pageCount, readJson, unwrap } from './helpers.js';
 
 interface EncryptedManifest {
     source: string;
@@ -23,10 +23,6 @@ const manifest = readJson<EncryptedManifest>('encrypted-manifest.json');
 const FIXTURES = Object.entries(manifest.fixtures);
 const PASSWORD_PROTECTED = FIXTURES.filter(([, f]) => f.requiresPassword);
 
-function unwrap<T>(result: Result<T>): T {
-    if (!result.ok) throw new Error(`unexpected error result: ${result.code} ${result.error}`);
-    return result.value;
-}
 
 const shape = ({ objId: _o, generation: _g, streamLength: _s, ...rest }: ImageInfo) => rest;
 
@@ -44,7 +40,7 @@ describe('Decrypting PDFs (real WASM)', () => {
         doc.close();
     });
 
-    /** Consumer code from the handoff, verbatim apart from the test harness. */
+    /** Decryption as a consumer composes it from the public API. */
     function decryptPdf(bytes: Uint8Array, password: string): Result<Uint8Array> {
         const loaded = qpdf.loadPdfWithPassword(bytes, password);
         if (!loaded.ok) return loaded;

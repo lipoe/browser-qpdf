@@ -14,7 +14,7 @@ import {
     type ImageInfo,
 } from '../../src/index.js';
 import { containsEncryptDict } from '../scenarios/encryption-scenarios.mjs';
-import { loadFixture, pageCount, readJson } from './helpers.js';
+import { loadFixture, pageCount, readJson, unwrap } from './helpers.js';
 
 interface ExpectedImage {
     width: number;
@@ -45,10 +45,6 @@ function expectedImagesOf(name: string, recursive: boolean): ExpectedImage[] {
     return recursive ? images.recursive_true : images.recursive_false;
 }
 
-function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: string }): T {
-    if (!result.ok) throw new Error(`unexpected error result: ${result.error}`);
-    return result.value;
-}
 
 /** Image metadata without object location and encoded length (both change when writing). */
 function withoutLocation(info: ImageInfo) {
@@ -170,7 +166,7 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             reloaded.close();
         });
 
-        it('accepts JPEG data with DCTDecode filter (compression path)', () => {
+        it('accepts JPEG data with DCTDecode filter and new metadata', () => {
             const jpegDoc = open('jpeg-compressed.pdf');
             const [jpegInfo] = imagesOf(jpegDoc);
             const jpeg = unwrap(jpegDoc.getRawImageStreamData(jpegInfo.objId, jpegInfo.generation));
