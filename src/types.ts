@@ -35,24 +35,32 @@ export type Result<T> =
     | { ok: false; code: ErrorCode; error: string };
 
 /**
- * Metadata for a single image XObject found in the PDF.
+ * Metadata for a single image XObject found in the PDF, as read from the
+ * image stream dictionary.
  */
 export interface ImageInfo {
     /** PDF object ID */
     objId: number;
     /** PDF generation number */
     generation: number;
-    /** Image width in pixels */
+    /** Image width in pixels (/Width), 0 if missing or not an integer */
     width: number;
-    /** Image height in pixels */
+    /** Image height in pixels (/Height), 0 if missing or not an integer */
     height: number;
-    /** Bits per color component, or null if not specified */
+    /** Bits per color component (/BitsPerComponent), or null if not specified */
     bitsPerComponent: number | null;
-    /** Color space name (e.g. "DeviceRGB"), or null if not specified */
+    /**
+     * Color space (/ColorSpace) as PDF name with leading slash (e.g. "/DeviceRGB"),
+     * the PDF syntax of an array color space (e.g. "[ /ICCBased 7 0 R ]"),
+     * or null if not specified
+     */
     colorSpace: string | null;
-    /** Compression filter name (e.g. "DCTDecode"), or null if not specified */
+    /**
+     * Compression filter (/Filter) as PDF name with leading slash (e.g. "/DCTDecode"),
+     * the PDF syntax of a filter array, or null if the stream is not filtered
+     */
     filter: string | null;
-    /** Encoded stream length in bytes */
+    /** Encoded (raw) stream length in bytes (/Length), 0 if missing */
     streamLength: number;
 }
 
