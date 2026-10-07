@@ -41,23 +41,20 @@ and cloned inside the image; zlib and libjpeg-turbo are git submodules.
 # 1. Fetch the submodules (zlib, libjpeg-turbo)
 git submodule update --init
 
-# 2. Build the Docker image (dependencies are built and cached in an image layer)
-docker build -t qpdf-wasm-builder .
-
-# 3. Compile WASM (artifacts land in ./dist); re-run 2 + 3 after changing src/wrapper.cpp
-# PowerShell:
-docker run --rm -v "${PWD}\dist:/out" qpdf-wasm-builder
-# Bash:
-docker run --rm -v "$(pwd)/dist:/out" qpdf-wasm-builder
-
-# 4. Install dependencies
+# 2. Install dependencies
 npm install
 
-# 5. Build TypeScript wrapper
+# 3. Build the WASM module in Docker (artifacts land in ./dist).
+#    Dependencies are cached in an image layer; re-run after changing src/wrapper.cpp.
+npm run build:wasm
+
+# 4. Build the TypeScript wrapper
 npm run build
 ```
 
-After this you should have `dist/qpdf-image-stream.js`, `dist/qpdf-image-stream.wasm`, `dist/index.js`, `dist/index.d.ts` and `dist/types.d.ts`.
+After this you should have `dist/qpdf-image-stream.js`, `dist/qpdf-image-stream.wasm`,
+`dist/build-info.json`, `dist/index.js`, `dist/index.d.ts`, `dist/errors.js`, `dist/errors.d.ts`
+and `dist/types.d.ts`.
 
 ## Usage
 
@@ -331,6 +328,21 @@ unfiltered streams with `FlateDecode`; image pixel data is unchanged.
 ### `PdfDocument.close(): void`
 
 Release all WASM memory. After this call, all other methods return a `DISPOSED` error. Multiple calls are no-ops.
+
+## Releasing
+
+`npm publish` packs whatever is in `dist/`. The `prepublishOnly` hook runs
+`npm run build` and the unit + integration tests first, so a stale TypeScript
+build or a WASM binary that does not match `src/wrapper.cpp` (build-info check)
+aborts the publish. It does not rebuild the WASM module itself.
+
+```bash
+npm run build:wasm        # only if src/wrapper.cpp or build-wasm.sh changed
+npm run test:browser      # browser tests are not part of prepublishOnly
+npm publish --dry-run     # optional: shows the 11 packed files
+npm publish
+git tag v<version> && git push origin v<version>
+```
 
 ## License
 

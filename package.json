@@ -26,7 +26,8 @@
   },
   "scripts": {
     "build": "tsc",
-    "build:wasm": "docker build -t qpdf-wasm-builder . && docker run --rm -v \"$PWD/dist:/out\" qpdf-wasm-builder",
+    "build:wasm": "node scripts/build-wasm.mjs",
+    "prepublishOnly": "npm run build && vitest run",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",

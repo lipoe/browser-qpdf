@@ -18,6 +18,17 @@ import { FIXTURES_DIR } from './helpers.js';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const TSC = join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc');
 
+/**
+ * Environment for nested npm calls. When this test runs inside an npm
+ * lifecycle (e.g. prepublishOnly of `npm publish --dry-run`), the dry-run
+ * setting is inherited and `npm pack` would write no tarball. The variable
+ * name's case varies (npm_config_dry_run / NPM_CONFIG_DRY_RUN) and Windows
+ * treats both as one, so every spelling is removed.
+ */
+const NPM_ENV = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => key.toLowerCase() !== 'npm_config_dry_run')
+);
+
 /** Consumer code using every public type, including the encryption API. */
 const CONSUMER_TS = `
 import {
@@ -109,6 +120,7 @@ describe('Published package (npm pack)', () => {
             cwd: ROOT,
             encoding: 'utf8',
             shell: process.platform === 'win32',
+            env: NPM_ENV,
         });
         const [packInfo] = JSON.parse(packOutput) as [{ filename: string; files: { path: string }[] }];
         packedFiles = packInfo.files.map((f) => f.path).sort();
@@ -119,7 +131,7 @@ describe('Published package (npm pack)', () => {
         execFileSync(
             'npm',
             ['install', '--offline', '--no-audit', '--no-fund', '--no-package-lock', join('..', packInfo.filename)],
-            { cwd: consumerDir, encoding: 'utf8', shell: process.platform === 'win32' }
+            { cwd: consumerDir, encoding: 'utf8', shell: process.platform === 'win32', env: NPM_ENV }
         );
 
         writeFileSync(join(consumerDir, 'consumer.ts'), CONSUMER_TS);
