@@ -5,11 +5,14 @@ Browser-compatible WASM module exposing qpdf's library API for reading and repla
 ## Features
 
 - Load PDFs (with or without password) entirely in-browser via WebAssembly
+- Encrypted PDFs: RC4 40/128-bit, AES-128 and AES-256; owner-password-only PDFs load without password
+- Decrypt PDFs (`writePdf({ preserveEncryption: false })`)
+- Machine-readable error codes (`PASSWORD_REQUIRED`, `INVALID_PASSWORD`, ...)
 - Enumerate image XObjects with full metadata (dimensions, color space, filter, stream length)
 - Read decoded or raw image stream data
 - Replace image streams with new content and metadata
 - Write modified PDFs back to `Uint8Array`
-- No filesystem dependencies — works in browsers and web workers
+- No filesystem dependencies — works in browsers, web workers and Node >= 18 (random data comes from `crypto.getRandomValues`)
 
 ## Prerequisites
 
@@ -19,16 +22,18 @@ Browser-compatible WASM module exposing qpdf's library API for reading and repla
 
 ## Building
 
-The WASM compilation runs inside a Docker container with Emscripten pre-configured. Two steps:
+The WASM compilation runs inside a Docker container with Emscripten pre-configured.
+qpdf is pinned to a release tag (`ARG QPDF_VERSION` in the `Dockerfile`, currently `v12.4.2`)
+and cloned inside the image; zlib and libjpeg-turbo are git submodules.
 
 ```bash
-# 1. Clone the qpdf source (not included in the repo)
-git clone https://github.com/qpdf/qpdf.git qpdf-src
+# 1. Fetch the submodules (zlib, libjpeg-turbo)
+git submodule update --init
 
-# 2. Build the Docker image
+# 2. Build the Docker image (dependencies are built and cached in an image layer)
 docker build -t qpdf-wasm-builder .
 
-# 3. Compile WASM (artifacts land in ./dist)
+# 3. Compile WASM (artifacts land in ./dist); re-run 2 + 3 after changing src/wrapper.cpp
 # PowerShell:
 docker run --rm -v "${PWD}\dist:/out" qpdf-wasm-builder
 # Bash:
@@ -41,7 +46,7 @@ npm install
 npm run build
 ```
 
-After this you should have `dist/qpdf-image-stream.js`, `dist/qpdf-image-stream.wasm`, `dist/index.js`, and `dist/index.d.ts`.
+After this you should have `dist/qpdf-image-stream.js`, `dist/qpdf-image-stream.wasm`, `dist/index.js`, `dist/index.d.ts` and `dist/types.d.ts`.
 
 ## Usage
 
@@ -92,6 +97,42 @@ if (result.ok) {
 ```typescript
 const result = qpdf.loadPdfWithPassword(pdfBytes, 'secret');
 ```
+
+`loadPdf` (without password) also opens encrypted PDFs that have no open
+password ("owner password only", i.e. only permissions are restricted).
+Both the user and the owner password are accepted by `loadPdfWithPassword`.
+
+Errors carry a machine-readable `code`, so no message text needs to be checked:
+
+```typescript
+const loaded = qpdf.loadPdf(pdfBytes);
+if (!loaded.ok && loaded.code === 'PASSWORD_REQUIRED') {
+    // ask the user for a password
+}
+
+const retry = qpdf.loadPdfWithPassword(pdfBytes, password);
+if (!retry.ok && retry.code === 'INVALID_PASSWORD') {
+    // ask again
+}
+```
+
+### Decrypting PDFs
+
+By default `writePdf()` keeps the encryption of the source PDF (e.g. after
+replacing images). To write an unencrypted copy, open the document and pass
+`preserveEncryption: false`:
+
+```typescript
+function decryptPdf(bytes: Uint8Array, password: string): Result<Uint8Array> {
+    const loaded = qpdf.loadPdfWithPassword(bytes, password);
+    if (!loaded.ok) return loaded; // loaded.code: 'INVALID_PASSWORD', 'INVALID_INPUT', ...
+    const plain = loaded.value.writePdf({ preserveEncryption: false });
+    loaded.value.close();
+    return plain;
+}
+```
+
+`doc.isEncrypted()` tells whether the loaded source PDF is encrypted.
 
 ### Custom WASM location
 
@@ -169,16 +210,43 @@ npm link @lipoe/browser-qpdf
 ## Testing
 
 ```bash
-npm test
+npm test                  # unit (mocked WASM) + integration (real WASM in dist/)
+npm run test:unit         # only the TypeScript wrapper against a mocked WASM module
+npm run test:integration  # real WASM in Node, incl. an npm pack + install check
+npm run test:browser      # real WASM in Chromium and Firefox, main thread and Web Worker
+npm run test:all          # build + all of the above
 ```
+
+Integration and browser tests need a built `dist/` (WASM + `npm run build`).
+Browser tests need Playwright browsers once: `npx playwright install chromium firefox`.
+
+The encryption behavior is described by one expectation table
+(`test/scenarios/expected-observations.mjs`) that Node, browser and worker
+tests share. Encrypted fixtures are generated from `multi-image.pdf` with the
+qpdf CLI (local or via Docker): `npm run fixtures:encrypted`.
 
 ## API
 
 All operations return a `Result<T>` type instead of throwing exceptions:
 
 ```typescript
-type Result<T> = { ok: true; value: T } | { ok: false; error: string };
+type Result<T> =
+    | { ok: true; value: T }
+    | { ok: false; code: ErrorCode; error: string };
 ```
+
+`code` is the stable contract; `error` is a human-readable message whose
+wording may change.
+
+| `code` | Meaning |
+|---|---|
+| `PASSWORD_REQUIRED` | `loadPdf` on a PDF that needs a password to open |
+| `INVALID_PASSWORD` | `loadPdfWithPassword` with a password that does not open the PDF (also an empty password) |
+| `INVALID_INPUT` | Invalid arguments (type, 256 MB limit, object ID/generation, metadata, object is not a stream) or data that cannot be read as a PDF |
+| `DISPOSED` | The document was already closed |
+| `UNKNOWN` | Anything else, see `error` |
+
+New codes may be added in minor versions; treat unknown codes like `UNKNOWN`.
 
 ### `createQpdfImageStreams(options?): Promise<QpdfImageStreams>`
 
@@ -186,11 +254,14 @@ Factory function that loads and initializes the WASM module.
 
 ### `QpdfImageStreams.loadPdf(data): Result<PdfDocument>`
 
-Load an unprotected PDF from a `Uint8Array`.
+Load a PDF from a `Uint8Array` without password. Encrypted PDFs without an
+open password load as well; otherwise fails with `PASSWORD_REQUIRED`.
 
 ### `QpdfImageStreams.loadPdfWithPassword(data, password): Result<PdfDocument>`
 
-Load a password-protected PDF.
+Load a password-protected PDF with its user or owner password. Fails with
+`INVALID_PASSWORD` if the password does not open the PDF. The password is
+ignored for unencrypted PDFs.
 
 ### `PdfDocument.getImages(options?): Result<ImageInfo[]>`
 
@@ -216,13 +287,24 @@ Metadata fields:
 
 Both `filter` and `colorSpace` accept values with or without a leading `/` — the library normalizes automatically.
 
-### `PdfDocument.writePdf(): Result<Uint8Array>`
+### `PdfDocument.isEncrypted(): Result<boolean>`
+
+Whether the loaded source PDF is encrypted (not the output of `writePdf`).
+
+### `PdfDocument.writePdf(options?): Result<Uint8Array>`
 
 Serialize the (possibly modified) PDF to a new `Uint8Array`.
 
+Options:
+- `preserveEncryption` (default `true`) — keep the encryption of the source PDF.
+  `false` writes an unencrypted PDF.
+
+Like qpdf's default, writing renumbers objects and compresses previously
+unfiltered streams with `FlateDecode`; image pixel data is unchanged.
+
 ### `PdfDocument.close(): void`
 
-Release all WASM memory. After this call, all other methods return an error. Multiple calls are no-ops.
+Release all WASM memory. After this call, all other methods return a `DISPOSED` error. Multiple calls are no-ops.
 
 ## License
 

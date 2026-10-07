@@ -1,6 +1,6 @@
 {
   "name": "@lipoe/browser-qpdf",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "license": "Apache-2.0",
   "description": "Browser-compatible WASM module exposing qpdf's library API for reading and replacing PDF image streams",
