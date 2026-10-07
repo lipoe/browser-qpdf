@@ -22,6 +22,7 @@ WORKDIR /build
 
 # qpdf is pinned to a release tag for reproducible builds
 ARG QPDF_VERSION=v12.4.2
+ENV QPDF_VERSION=${QPDF_VERSION}
 RUN git clone --depth 1 --branch "${QPDF_VERSION}" https://github.com/qpdf/qpdf.git qpdf-src
 
 # Dependencies: build static libraries (cached until these inputs change)
@@ -50,5 +51,6 @@ ENTRYPOINT ["/bin/bash", "-c", "\
     mkdir -p /out && \
     cp dist/qpdf-image-stream.js /out/ && \
     cp dist/qpdf-image-stream.wasm /out/ && \
+    cp dist/build-info.json /out/ && \
     echo '=== Artifacts copied to /out ===' \
 "]

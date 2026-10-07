@@ -94,6 +94,19 @@ emcc \
   -I "$ROOT/qpdf-src/build/libqpdf" \
   -lz \
   -ljpeg
+
+# Record what this binary was built from; tests compare it with the sources
+# to detect a stale dist/ (see test/integration/build-info.test.ts).
+cat > "$DIST_DIR/build-info.json" <<EOF
+{
+  "qpdfVersion": "${QPDF_VERSION:-unknown}",
+  "emscriptenVersion": "$(emcc -dumpversion)",
+  "sources": {
+    "src/wrapper.cpp": "$(sha256sum "$ROOT/src/wrapper.cpp" | cut -d' ' -f1)",
+    "build-wasm.sh": "$(sha256sum "$ROOT/build-wasm.sh" | cut -d' ' -f1)"
+  }
+}
+EOF
 }
 
 if [ "$STAGE" = "all" ] || [ "$STAGE" = "deps" ]; then

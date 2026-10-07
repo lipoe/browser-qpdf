@@ -35,3 +35,4 @@ typed as `Result<T>` (e.g. test doubles) must add a `code`.
 ### Build
 - qpdf pinned to `v12.4.2`, cloned inside the Docker build. Dependencies are
   built in a cached image layer.
+- `dist/build-info.json` records the build inputs; tests fail on a stale `dist/`.

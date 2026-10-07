@@ -218,6 +218,9 @@ npm run test:all          # build + all of the above
 ```
 
 Integration and browser tests need a built `dist/` (WASM + `npm run build`).
+The WASM build writes `dist/build-info.json` (hashes of `src/wrapper.cpp` and
+`build-wasm.sh`, qpdf version); an integration test fails if `dist/` is stale,
+so a test run can never silently check an outdated binary.
 Browser tests need Playwright browsers once: `npx playwright install chromium firefox`.
 
 The encryption behavior is described by one expectation table
