@@ -17,10 +17,13 @@ RUN apt-get update && \
 # Set working directory
 WORKDIR /build
 
+# qpdf is pinned to a release tag for reproducible builds
+ARG QPDF_VERSION=v12.4.2
+RUN git clone --depth 1 --branch "${QPDF_VERSION}" https://github.com/qpdf/qpdf.git qpdf-src
+
 # Copy source tree into container
 COPY build-wasm.sh ./
 COPY patches/ ./patches/
-COPY qpdf-src/ ./qpdf-src/
 COPY src/ ./src/
 COPY deps/ ./deps/
 

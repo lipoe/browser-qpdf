@@ -28,3 +28,6 @@ qpdf-src/
 # Playwright
 test-results/
 playwright-report/
+
+# Local WASM build output
+out-wasm/
