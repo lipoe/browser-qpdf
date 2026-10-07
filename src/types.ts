@@ -4,44 +4,77 @@
  * These types define the ergonomic, type-safe API surface exposed to consumers.
  */
 
+import type { ErrorCode } from './errors.js';
+
 /**
  * Discriminated union representing either a successful result or an error.
  * All operations return this type instead of throwing exceptions.
+ *
+ * On failure, `code` is the stable, machine-readable error category and
+ * `error` a human-readable message (wording may change between versions).
  */
-export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
+export type Result<T> =
+    | { ok: true; value: T }
+    | { ok: false; code: ErrorCode; error: string };
 
 /**
- * Metadata for a single image XObject found in the PDF.
+ * Metadata for a single image XObject found in the PDF, as read from the
+ * image stream dictionary.
  */
 export interface ImageInfo {
     /** PDF object ID */
     objId: number;
     /** PDF generation number */
     generation: number;
-    /** Image width in pixels */
+    /** Image width in pixels (/Width), 0 if missing or not an integer */
     width: number;
-    /** Image height in pixels */
+    /** Image height in pixels (/Height), 0 if missing or not an integer */
     height: number;
-    /** Bits per color component, or null if not specified */
+    /** Bits per color component (/BitsPerComponent), or null if not specified */
     bitsPerComponent: number | null;
-    /** Color space name (e.g. "DeviceRGB"), or null if not specified */
+    /**
+     * Color space (/ColorSpace) as PDF name with leading slash (e.g. "/DeviceRGB"),
+     * the PDF syntax of an array color space (e.g. "[ /ICCBased 7 0 R ]"),
+     * or null if not specified
+     */
     colorSpace: string | null;
-    /** Compression filter name (e.g. "DCTDecode"), or null if not specified */
+    /**
+     * Compression filter (/Filter) as PDF name with leading slash (e.g. "/DCTDecode"),
+     * the PDF syntax of a filter array, or null if the stream is not filtered
+     */
     filter: string | null;
-    /** Encoded stream length in bytes */
+    /** Encoded (raw) stream length in bytes (/Length), 0 if missing */
     streamLength: number;
 }
 
 /**
- * Metadata fields for stream replacement. All fields are optional during replacement;
- * omitted fields preserve the original values.
+ * Metadata fields for stream replacement. All fields are optional during
+ * replacement; omit a field to keep its original value. Provided values are
+ * validated, invalid ones fail with `INVALID_INPUT`.
  */
 export interface ImageMetadata {
+    /** New /Width in pixels: integer from 1 to 2^31-1 */
     width: number;
+    /** New /Height in pixels: integer from 1 to 2^31-1 */
     height: number;
+    /** New /BitsPerComponent (e.g. 8): integer from 1 to 2^31-1 */
     bitsPerComponent: number;
+    /** New /ColorSpace name, with or without leading slash (e.g. "DeviceRGB"); not empty */
     colorSpace: string;
+    /** New /Filter name, with or without leading slash (e.g. "DCTDecode"); not empty */
     filter: string;
+}
+
+/**
+ * Options for PdfDocument.writePdf().
+ */
+export interface WriteOptions {
+    /**
+     * Keep the encryption of the source PDF in the output (default: true).
+     * Set to false to write an unencrypted PDF; this requires the document
+     * to have been opened (with the user or owner password if needed).
+     */
+    preserveEncryption?: boolean;
 }
 
 /**
@@ -49,7 +82,12 @@ export interface ImageMetadata {
  * stream reading/replacement, PDF writing, and resource cleanup.
  */
 export interface PdfDocument {
-    /** Enumerate all image XObjects in the PDF. */
+    /**
+     * Enumerate all image XObjects in the PDF.
+     *
+     * Known limitation: errors while traversing the pages are not reported;
+     * the result is then `ok` with the images found up to that point.
+     */
     getImages(options?: { recursive?: boolean }): Result<ImageInfo[]>;
     /** Read decoded (decompressed) stream data for an image. */
     getImageStreamData(objId: number, generation: number): Result<Uint8Array>;
@@ -65,8 +103,16 @@ export interface PdfDocument {
         data: Uint8Array,
         metadata?: Partial<ImageMetadata>
     ): Result<void>;
-    /** Write the (possibly modified) PDF to a new Uint8Array. */
-    writePdf(): Result<Uint8Array>;
+    /**
+     * Whether the loaded (source) PDF is encrypted. Reflects the input
+     * document, not the output of writePdf().
+     */
+    isEncrypted(): Result<boolean>;
+    /**
+     * Write the (possibly modified) PDF to a new Uint8Array.
+     * By default the encryption of the source PDF is preserved.
+     */
+    writePdf(options?: WriteOptions): Result<Uint8Array>;
     /**
      * Release all WASM memory held by this document.
      * After calling close(), all other methods will return an error result.
@@ -80,9 +126,16 @@ export interface PdfDocument {
  * Use loadPdf or loadPdfWithPassword to open a PDF document.
  */
 export interface QpdfImageStreams {
-    /** Load an unprotected PDF from binary data. */
+    /**
+     * Load a PDF from binary data without a password. PDFs that are encrypted
+     * without an open password (owner password only) load as well.
+     * Fails with `PASSWORD_REQUIRED` if a password is needed.
+     */
     loadPdf(data: Uint8Array): Result<PdfDocument>;
-    /** Load a password-protected PDF from binary data. */
+    /**
+     * Load a password-protected PDF with its user or owner password.
+     * Fails with `INVALID_PASSWORD` if the password does not open the PDF.
+     */
     loadPdfWithPassword(data: Uint8Array, password: string): Result<PdfDocument>;
 }
 

@@ -1,7 +1,18 @@
 #!/bin/bash
 # Build script for compiling qpdf + wrapper to WebAssembly
 # Requires: Emscripten SDK (emsdk), git
+#
+# Usage: ./build-wasm.sh [all|deps|wasm]
+#   deps  build zlib, libjpeg-turbo and qpdf static libraries (slow, cacheable)
+#   wasm  link src/wrapper.cpp against the built libraries (fast)
+#   all   both (default)
 set -euo pipefail
+
+STAGE="${1:-all}"
+case "$STAGE" in
+  all|deps|wasm) ;;
+  *) echo "Unknown stage: $STAGE (expected all, deps or wasm)" >&2; exit 1 ;;
+esac
 
 ROOT="$PWD"
 OUT_DIR="$ROOT/out"
@@ -17,6 +28,7 @@ export CXXFLAGS="$CFLAGS"
 
 mkdir -p "$OUT_DIR" "$DIST_DIR"
 
+build_deps() {
 # --- Step 1: Build zlib for WASM ---
 echo "=== Building zlib ==="
 cd "$ROOT/deps/zlib"
@@ -53,8 +65,11 @@ emcmake cmake -S . -B build \
   -DSKIP_OS_SECURE_RANDOM=OFF \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_CXX_FLAGS="$CXXFLAGS"
-cmake --build build -j$(nproc)
+# Only the static library is linked; skip tools, examples and tests
+cmake --build build --target libqpdf -j$(nproc)
+}
 
+build_wasm() {
 # --- Step 4: Link wrapper + qpdf into final WASM module ---
 echo "=== Building WASM module ==="
 emcc \
@@ -80,5 +95,26 @@ emcc \
   -lz \
   -ljpeg
 
-echo "=== Build complete ==="
+# Record what this binary was built from; tests compare it with the sources
+# to detect a stale dist/ (see test/integration/build-info.test.ts).
+cat > "$DIST_DIR/build-info.json" <<EOF
+{
+  "qpdfVersion": "${QPDF_VERSION:-unknown}",
+  "emscriptenVersion": "$(emcc -dumpversion)",
+  "sources": {
+    "src/wrapper.cpp": "$(sha256sum "$ROOT/src/wrapper.cpp" | cut -d' ' -f1)",
+    "build-wasm.sh": "$(sha256sum "$ROOT/build-wasm.sh" | cut -d' ' -f1)"
+  }
+}
+EOF
+}
+
+if [ "$STAGE" = "all" ] || [ "$STAGE" = "deps" ]; then
+  build_deps
+fi
+if [ "$STAGE" = "all" ] || [ "$STAGE" = "wasm" ]; then
+  build_wasm
+fi
+
+echo "=== Build complete ($STAGE) ==="
 echo "Output: $DIST_DIR/qpdf-image-stream.js + qpdf-image-stream.wasm"

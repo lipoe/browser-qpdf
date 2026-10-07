@@ -1,6 +1,6 @@
 {
   "name": "@lipoe/browser-qpdf",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "license": "Apache-2.0",
   "description": "Browser-compatible WASM module exposing qpdf's library API for reading and replacing PDF image streams",
@@ -12,8 +12,11 @@
     "./qpdf-image-stream.wasm": "./dist/qpdf-image-stream.wasm"
   },
   "files": [
+    "dist/errors.js",
+    "dist/errors.d.ts",
     "dist/index.js",
     "dist/index.d.ts",
+    "dist/types.d.ts",
     "dist/qpdf-image-stream.js",
     "dist/qpdf-image-stream.wasm",
     "THIRD-PARTY-NOTICES"
@@ -23,9 +26,16 @@
   },
   "scripts": {
     "build": "tsc",
+    "build:wasm": "node scripts/build-wasm.mjs",
+    "prepublishOnly": "npm run build && vitest run",
     "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
     "test:pbt": "vitest run test/pbt",
+    "test:browser": "npm run build && playwright test",
+    "test:all": "npm run build && vitest run && playwright test",
     "test:watch": "vitest",
+    "fixtures:encrypted": "node test/fixtures/generate-encrypted-fixtures.mjs",
     "playground": "npx --yes serve ."
   },
   "devDependencies": {

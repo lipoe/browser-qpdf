@@ -20,10 +20,14 @@ const validWidth = fc.integer({ min: 1, max: 10000 });
 const validHeight = fc.integer({ min: 1, max: 10000 });
 const validBpc = fc.constantFrom(1, 2, 4, 8, 16);
 const validColorSpace = fc.constantFrom('/DeviceRGB', '/DeviceGray', '/DeviceCMYK');
-const validFilter = fc.constantFrom('/DCTDecode', '/FlateDecode', '/CCITTFaxDecode', '');
+const validFilter = fc.constantFrom('/DCTDecode', '/FlateDecode', '/CCITTFaxDecode');
 const validData = fc.uint8Array({ minLength: 1, maxLength: 1000 });
 const validObjId = fc.integer({ min: 1, max: 10000 });
 const validGeneration = fc.integer({ min: 0, max: 100 });
+
+
+/** The wrapper strips a leading slash; the C++ side adds the PDF name prefix. */
+const stripSlash = (v: string) => (v.startsWith('/') ? v.slice(1) : v);
 
 describe('Feature: qpdf-wasm-image-streams, Property 3: Stream Replacement Updates Metadata Correctly', () => {
     beforeEach(() => {
@@ -133,8 +137,8 @@ describe('Feature: qpdf-wasm-image-streams, Property 3: Stream Replacement Updat
                     expect(capturedMetadata.width).toBe(width);
                     expect(capturedMetadata.height).toBe(height);
                     expect(capturedMetadata.bitsPerComponent).toBe(bpc);
-                    expect(capturedMetadata.colorSpace).toBe(colorSpace);
-                    expect(capturedMetadata.filter).toBe(filter);
+                    expect(capturedMetadata.colorSpace).toBe(stripSlash(colorSpace));
+                    expect(capturedMetadata.filter).toBe(stripSlash(filter));
 
                     doc.value.close();
                 }

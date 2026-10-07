@@ -13,6 +13,10 @@ import * as fc from 'fast-check';
 import { createQpdfImageStreams } from '../../src/index.js';
 import { mockWasm } from '../__mocks__/qpdf-image-stream.js';
 
+
+/** The wrapper strips a leading slash; the C++ side adds the PDF name prefix. */
+const stripSlash = (v: string) => (v.startsWith('/') ? v.slice(1) : v);
+
 describe('Property 4: Omitted Metadata Fields Are Preserved', () => {
     beforeEach(() => {
         mockWasm.loadPdf = null;
@@ -151,8 +155,8 @@ describe('Property 4: Omitted Metadata Fields Are Preserved', () => {
                     expect(capturedMetadata.width).toBe(width ?? 0);
                     expect(capturedMetadata.height).toBe(height ?? 0);
                     expect(capturedMetadata.bitsPerComponent).toBe(bpc ?? 0);
-                    expect(capturedMetadata.colorSpace).toBe(colorSpace ?? '');
-                    expect(capturedMetadata.filter).toBe(filter ?? '');
+                    expect(capturedMetadata.colorSpace).toBe(colorSpace ? stripSlash(colorSpace) : '');
+                    expect(capturedMetadata.filter).toBe(filter ? stripSlash(filter) : '');
                 }
             ),
             { numRuns: 100 }

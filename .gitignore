@@ -22,3 +22,12 @@ coverage/
 *.tsbuildinfo
 
 .kiro
+# qpdf source (cloned at the pinned version, see README)
+qpdf-src/
+
+# Playwright
+test-results/
+playwright-report/
+
+# Local WASM build output
+out-wasm/

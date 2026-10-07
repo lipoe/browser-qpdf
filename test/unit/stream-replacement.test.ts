@@ -103,12 +103,13 @@ describe('Stream Replacement', () => {
             expect(captured.objId).toBe(5);
             expect(captured.gen).toBe(0);
             expect(captured.data).toBe(newData);
+            // Leading slashes are stripped; the C++ wrapper adds the PDF name prefix
             expect(captured.metadata).toEqual({
                 width: 100,
                 height: 200,
                 bitsPerComponent: 8,
-                colorSpace: '/DeviceRGB',
-                filter: '/DCTDecode',
+                colorSpace: 'DeviceRGB',
+                filter: 'DCTDecode',
             });
         });
 
@@ -160,7 +161,7 @@ describe('Stream Replacement', () => {
                 width: 50,
                 height: 0,
                 bitsPerComponent: 0,
-                colorSpace: '/DeviceGray',
+                colorSpace: 'DeviceGray',
                 filter: '',
             });
         });
@@ -492,7 +493,7 @@ describe('PDF Writing', () => {
         // Replace a stream
         const replaceResult = doc.value.replaceImageStream(
             5, 0, new Uint8Array([10, 20, 30]),
-            { width: 1, height: 1, bitsPerComponent: 8, colorSpace: '/DeviceRGB', filter: '' }
+            { width: 1, height: 1, bitsPerComponent: 8, colorSpace: '/DeviceRGB' }
         );
         expect(replaceResult.ok).toBe(true);
 
@@ -704,7 +705,6 @@ describe('Integration-style: Load, Replace, Write workflow', () => {
             height: 100,
             bitsPerComponent: 8,
             colorSpace: '/DeviceRGB',
-            filter: '',
         });
         expect(replaceResult.ok).toBe(true);
 
