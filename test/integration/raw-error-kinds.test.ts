@@ -30,7 +30,7 @@ describe('Raw wrapper error kinds (real WASM)', () => {
         const result = (await withRawWrapper(TRIGGERS[kind])) as RawError;
         expect(result.success).toBe(false);
         expect(result.kind).toBe(kind);
-        expect(result.error.length).toBeGreaterThan(0);
+        expect(result.error?.length).toBeGreaterThan(0);
     });
 
     it.each([

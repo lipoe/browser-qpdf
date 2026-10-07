@@ -38,8 +38,8 @@ import {
     invalidInput,
     isRawError,
     type ErrorContext,
-    type RawError,
 } from './errors.js';
+import type { RawStatus, RawWrapper, WasmModule, WasmModuleFactory } from './raw.js';
 
 // Public error contract
 export { ERROR_CODES, type ErrorCode } from './errors.js';
@@ -54,37 +54,6 @@ export type {
     CreateOptions,
     WriteOptions,
 } from './types.js';
-
-// --- Internal types for the raw WASM module ---
-
-/** Shape of the Emscripten-generated module factory default export. */
-interface WasmModuleFactory {
-    (options?: { locateFile?: (filename: string) => string }): Promise<WasmModule>;
-}
-
-/** Internal type for the instantiated WASM module. */
-interface WasmModule {
-    QpdfWasmWrapper: new () => RawWrapper;
-}
-
-/** Status object returned by C++ wrapper operations without a value. */
-type RawStatus = { success: true } | RawError;
-
-/** Internal type matching the Embind-exposed C++ class methods. */
-interface RawWrapper {
-    loadPdf(data: Uint8Array): RawStatus;
-    loadPdfWithPassword(data: Uint8Array, password: string): RawStatus;
-    getImages(recursive: boolean): unknown;
-    getImageStreamData(objId: number, gen: number): unknown;
-    getRawImageStreamData(objId: number, gen: number): unknown;
-    replaceImageStream(objId: number, gen: number, data: Uint8Array, metadata: unknown): RawStatus;
-    isEncrypted(): unknown;
-    writePdf(preserveEncryption: boolean): unknown;
-    close(): void;
-    getPageCount(): number;
-    /** Embind: frees the C++ object itself. */
-    delete(): void;
-}
 
 // --- Calling the raw wrapper (error mapping: see errors.ts) ---
 
@@ -131,6 +100,20 @@ function validateObjectRef(objId: number, generation: number): Result<never> | u
     if (!Number.isInteger(objId) || objId < 0) return invalidInput('Invalid object ID');
     if (!Number.isInteger(generation) || generation < 0)
         return invalidInput('Invalid generation number');
+    return undefined;
+}
+
+function validatePassword(password: string): Result<never> | undefined {
+    if (typeof password !== 'string') return invalidInput('Password must be a string');
+    return undefined;
+}
+
+function validateWriteOptions(options?: WriteOptions): Result<never> | undefined {
+    if (options === undefined) return undefined;
+    if (options === null || typeof options !== 'object')
+        return invalidInput('Invalid options: must be an object');
+    if (options.preserveEncryption !== undefined && typeof options.preserveEncryption !== 'boolean')
+        return invalidInput('Invalid option: preserveEncryption must be a boolean');
     return undefined;
 }
 
@@ -186,36 +169,47 @@ export async function createQpdfImageStreams(
         function createPdfDocument(wrapper: RawWrapper): PdfDocument {
             let closed = false;
 
+            /**
+             * Run an operation on the open document. After close() the C++
+             * object is freed, so every operation is rejected here.
+             */
+            function withDocument<T>(operation: () => Result<T>): Result<T> {
+                return closed ? disposed() : operation();
+            }
+
             return {
                 getImages(options?: { recursive?: boolean }): Result<ImageInfo[]> {
-                    if (closed) return disposed();
-                    const recursive = options?.recursive ?? false;
-                    return callRaw(
-                        () => wrapper.getImages(recursive),
-                        (value) => value as ImageInfo[],
-                        'Failed to get images'
-                    );
+                    return withDocument(() => {
+                        const recursive = options?.recursive ?? false;
+                        return callRaw(
+                            () => wrapper.getImages(recursive),
+                            (value) => value as ImageInfo[],
+                            'Failed to get images'
+                        );
+                    });
                 },
 
                 getImageStreamData(objId: number, generation: number): Result<Uint8Array> {
-                    if (closed) return disposed();
-                    const invalid = validateObjectRef(objId, generation);
-                    if (invalid) return invalid;
-                    return callRaw(
-                        () => wrapper.getImageStreamData(objId, generation),
-                        copyBytes,
-                        'Failed to get stream data'
+                    return withDocument(
+                        () =>
+                            validateObjectRef(objId, generation) ??
+                            callRaw(
+                                () => wrapper.getImageStreamData(objId, generation),
+                                copyBytes,
+                                'Failed to get stream data'
+                            )
                     );
                 },
 
                 getRawImageStreamData(objId: number, generation: number): Result<Uint8Array> {
-                    if (closed) return disposed();
-                    const invalid = validateObjectRef(objId, generation);
-                    if (invalid) return invalid;
-                    return callRaw(
-                        () => wrapper.getRawImageStreamData(objId, generation),
-                        copyBytes,
-                        'Failed to get raw stream data'
+                    return withDocument(
+                        () =>
+                            validateObjectRef(objId, generation) ??
+                            callRaw(
+                                () => wrapper.getRawImageStreamData(objId, generation),
+                                copyBytes,
+                                'Failed to get raw stream data'
+                            )
                     );
                 },
 
@@ -225,51 +219,56 @@ export async function createQpdfImageStreams(
                     data: Uint8Array,
                     metadata?: Partial<ImageMetadata>
                 ): Result<void> {
-                    if (closed) return disposed();
-                    if (!(data instanceof Uint8Array))
-                        return invalidInput('Data must be a Uint8Array');
-                    const invalid =
-                        validateObjectRef(objId, generation) ?? validateMetadata(metadata);
-                    if (invalid) return invalid;
+                    return withDocument(() => {
+                        if (!(data instanceof Uint8Array))
+                            return invalidInput('Data must be a Uint8Array');
+                        const invalid =
+                            validateObjectRef(objId, generation) ?? validateMetadata(metadata);
+                        if (invalid) return invalid;
 
-                    // Build metadata object for WASM:
-                    // 0 for integers and empty string for strings means "preserve original"
-                    // Normalize: strip leading slash from filter/colorSpace if provided,
-                    // the C++ wrapper adds the PDF name prefix automatically.
-                    const normalizeName = (v: string) => (v.startsWith('/') ? v.slice(1) : v);
+                        // Build metadata object for WASM:
+                        // 0 for integers and empty string for strings means "preserve original"
+                        // Normalize: strip leading slash from filter/colorSpace if provided,
+                        // the C++ wrapper adds the PDF name prefix automatically.
+                        const normalizeName = (v: string) => (v.startsWith('/') ? v.slice(1) : v);
 
-                    const wasmMetadata = {
-                        width: metadata?.width ?? 0,
-                        height: metadata?.height ?? 0,
-                        bitsPerComponent: metadata?.bitsPerComponent ?? 0,
-                        colorSpace: metadata?.colorSpace ? normalizeName(metadata.colorSpace) : '',
-                        filter: metadata?.filter ? normalizeName(metadata.filter) : '',
-                    };
+                        const wasmMetadata = {
+                            width: metadata?.width ?? 0,
+                            height: metadata?.height ?? 0,
+                            bitsPerComponent: metadata?.bitsPerComponent ?? 0,
+                            colorSpace: metadata?.colorSpace ? normalizeName(metadata.colorSpace) : '',
+                            filter: metadata?.filter ? normalizeName(metadata.filter) : '',
+                        };
 
-                    return callRaw(
-                        () => wrapper.replaceImageStream(objId, generation, data, wasmMetadata),
-                        () => undefined,
-                        'Failed to replace stream'
-                    );
+                        return callRaw(
+                            () => wrapper.replaceImageStream(objId, generation, data, wasmMetadata),
+                            () => undefined,
+                            'Failed to replace stream'
+                        );
+                    });
                 },
 
                 isEncrypted(): Result<boolean> {
-                    if (closed) return disposed();
-                    return callRaw(
-                        () => wrapper.isEncrypted(),
-                        (value) => value === true,
-                        'Failed to determine encryption'
+                    return withDocument(() =>
+                        callRaw(
+                            () => wrapper.isEncrypted(),
+                            (value) => value === true,
+                            'Failed to determine encryption'
+                        )
                     );
                 },
 
                 writePdf(options?: WriteOptions): Result<Uint8Array> {
-                    if (closed) return disposed();
-                    const preserveEncryption = options?.preserveEncryption ?? true;
-                    return callRaw(
-                        () => wrapper.writePdf(preserveEncryption),
-                        copyBytes,
-                        'Failed to write PDF'
-                    );
+                    return withDocument(() => {
+                        const invalid = validateWriteOptions(options);
+                        if (invalid) return invalid;
+                        const preserveEncryption = options?.preserveEncryption ?? true;
+                        return callRaw(
+                            () => wrapper.writePdf(preserveEncryption),
+                            copyBytes,
+                            'Failed to write PDF'
+                        );
+                    });
                 },
 
                 close(): void {
@@ -314,8 +313,11 @@ export async function createQpdfImageStreams(
             },
 
             loadPdfWithPassword(data: Uint8Array, password: string): Result<PdfDocument> {
-                return load(data, 'loadPdfWithPassword', (wrapper) =>
-                    wrapper.loadPdfWithPassword(data, password)
+                return (
+                    validatePassword(password) ??
+                    load(data, 'loadPdfWithPassword', (wrapper) =>
+                        wrapper.loadPdfWithPassword(data, password)
+                    )
                 );
             },
         };

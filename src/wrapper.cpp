@@ -124,7 +124,8 @@ static val makeNoPdfError() {
 // --- Exception boundary ---
 
 // Runs `body` and converts every C++ exception into an error result. This is
-// the only place where exceptions are caught and classified.
+// the only place where exceptions are classified into error kinds. (getImages
+// and getPageCount additionally swallow traversal errors by design; see there.)
 template <typename Body>
 static val guarded(Body&& body) {
     try {
@@ -184,90 +185,90 @@ public:
      */
     val getImages(bool recursive) {
         return withDocument([&]() {
-        val result = val::array();
-        std::set<QPDFObjGen> seen;
+            val result = val::array();
+            std::set<QPDFObjGen> seen;
 
-        try {
-            QPDFPageDocumentHelper pdh(*qpdf_);
-            auto pages = pdh.getAllPages();
+            try {
+                QPDFPageDocumentHelper pdh(*qpdf_);
+                auto pages = pdh.getAllPages();
 
-            for (auto& page : pages) {
-                page.forEachImage(
-                    recursive,
-                    [&result, &seen](QPDFObjectHandle& obj,
-                                     QPDFObjectHandle& /*xobj_dict*/,
-                                     std::string const& /*key*/) {
-                        // Deduplicate across pages
-                        QPDFObjGen og = obj.getObjGen();
-                        if (seen.count(og) > 0) {
-                            return;
-                        }
-                        seen.insert(og);
+                for (auto& page : pages) {
+                    page.forEachImage(
+                        recursive,
+                        [&result, &seen](QPDFObjectHandle& obj,
+                                         QPDFObjectHandle& /*xobj_dict*/,
+                                         std::string const& /*key*/) {
+                            // Deduplicate across pages
+                            QPDFObjGen og = obj.getObjGen();
+                            if (seen.count(og) > 0) {
+                                return;
+                            }
+                            seen.insert(og);
 
-                        // Get stream dictionary
-                        QPDFObjectHandle dict = obj.getDict();
+                            // Get stream dictionary
+                            QPDFObjectHandle dict = obj.getDict();
 
-                        // Build ImageInfo object
-                        val info = val::object();
-                        info.set("objId", obj.getObjectID());
-                        info.set("generation", obj.getGeneration());
+                            // Build ImageInfo object
+                            val info = val::object();
+                            info.set("objId", obj.getObjectID());
+                            info.set("generation", obj.getGeneration());
 
-                        // Width and Height (required fields)
-                        QPDFObjectHandle widthObj = dict.getKey("/Width");
-                        info.set("width", widthObj.isInteger()
-                            ? static_cast<int>(widthObj.getIntValue()) : 0);
+                            // Width and Height (required fields)
+                            QPDFObjectHandle widthObj = dict.getKey("/Width");
+                            info.set("width", widthObj.isInteger()
+                                ? static_cast<int>(widthObj.getIntValue()) : 0);
 
-                        QPDFObjectHandle heightObj = dict.getKey("/Height");
-                        info.set("height", heightObj.isInteger()
-                            ? static_cast<int>(heightObj.getIntValue()) : 0);
+                            QPDFObjectHandle heightObj = dict.getKey("/Height");
+                            info.set("height", heightObj.isInteger()
+                                ? static_cast<int>(heightObj.getIntValue()) : 0);
 
-                        // BitsPerComponent (optional - null if missing)
-                        QPDFObjectHandle bpcObj = dict.getKey("/BitsPerComponent");
-                        if (bpcObj.isNull()) {
-                            info.set("bitsPerComponent", val::null());
-                        } else {
-                            info.set("bitsPerComponent",
-                                bpcObj.isInteger()
-                                    ? static_cast<int>(bpcObj.getIntValue()) : 0);
-                        }
+                            // BitsPerComponent (optional - null if missing)
+                            QPDFObjectHandle bpcObj = dict.getKey("/BitsPerComponent");
+                            if (bpcObj.isNull()) {
+                                info.set("bitsPerComponent", val::null());
+                            } else {
+                                info.set("bitsPerComponent",
+                                    bpcObj.isInteger()
+                                        ? static_cast<int>(bpcObj.getIntValue()) : 0);
+                            }
 
-                        // ColorSpace (optional - null if missing)
-                        QPDFObjectHandle csObj = dict.getKey("/ColorSpace");
-                        if (csObj.isNull()) {
-                            info.set("colorSpace", val::null());
-                        } else if (csObj.isName()) {
-                            info.set("colorSpace", val(csObj.getName()));
-                        } else {
-                            // Array or other complex type - unparse to string
-                            info.set("colorSpace", val(csObj.unparse()));
-                        }
+                            // ColorSpace (optional - null if missing)
+                            QPDFObjectHandle csObj = dict.getKey("/ColorSpace");
+                            if (csObj.isNull()) {
+                                info.set("colorSpace", val::null());
+                            } else if (csObj.isName()) {
+                                info.set("colorSpace", val(csObj.getName()));
+                            } else {
+                                // Array or other complex type - unparse to string
+                                info.set("colorSpace", val(csObj.unparse()));
+                            }
 
-                        // Filter (optional - null if missing)
-                        QPDFObjectHandle filterObj = dict.getKey("/Filter");
-                        if (filterObj.isNull()) {
-                            info.set("filter", val::null());
-                        } else if (filterObj.isName()) {
-                            info.set("filter", val(filterObj.getName()));
-                        } else {
-                            // Array or other type - unparse to string
-                            info.set("filter", val(filterObj.unparse()));
-                        }
+                            // Filter (optional - null if missing)
+                            QPDFObjectHandle filterObj = dict.getKey("/Filter");
+                            if (filterObj.isNull()) {
+                                info.set("filter", val::null());
+                            } else if (filterObj.isName()) {
+                                info.set("filter", val(filterObj.getName()));
+                            } else {
+                                // Array or other type - unparse to string
+                                info.set("filter", val(filterObj.unparse()));
+                            }
 
-                        // Stream length (encoded/raw byte length)
-                        QPDFObjectHandle lengthObj = dict.getKey("/Length");
-                        info.set("streamLength", lengthObj.isInteger()
-                            ? static_cast<int>(lengthObj.getIntValue()) : 0);
+                            // Stream length (encoded/raw byte length)
+                            QPDFObjectHandle lengthObj = dict.getKey("/Length");
+                            info.set("streamLength", lengthObj.isInteger()
+                                ? static_cast<int>(lengthObj.getIntValue()) : 0);
 
-                        result.call<void>("push", info);
-                    });
+                            result.call<void>("push", info);
+                        });
+                }
+            } catch (std::exception const& /*e*/) {
+                // Known implicit contract (kept for compatibility, see README):
+                // errors while traversing pages are swallowed and the images
+                // collected so far are returned as a successful result.
             }
-        } catch (std::exception const& /*e*/) {
-            // Known implicit contract (kept for compatibility, see README):
-            // errors while traversing pages are swallowed and the images
-            // collected so far are returned as a successful result.
-        }
 
-        return result;
+            return result;
         });
     }
 

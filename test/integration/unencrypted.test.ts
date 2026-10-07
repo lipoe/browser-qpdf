@@ -210,6 +210,23 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             expect(api.loadPdf(bytes)).toEqual({ ok: false, code: 'INVALID_INPUT', error: "input.pdf: can't find startxref" });
         });
 
+        it('rejects invalid password and write option types as INVALID_INPUT (not Embind errors)', () => {
+            const pdf = loadFixture('aes128-user.pdf');
+            expect(api.loadPdfWithPassword(pdf, undefined as unknown as string)).toEqual({
+                ok: false,
+                code: 'INVALID_INPUT',
+                error: 'Password must be a string',
+            });
+
+            const doc = unwrap(api.loadPdfWithPassword(pdf, 'geheim'));
+            expect(doc.writePdf({ preserveEncryption: 'false' as unknown as boolean })).toEqual({
+                ok: false,
+                code: 'INVALID_INPUT',
+                error: 'Invalid option: preserveEncryption must be a boolean',
+            });
+            doc.close();
+        });
+
         it('rejects non-Uint8Array input', () => {
             expect(api.loadPdf([1, 2, 3] as unknown as Uint8Array)).toEqual({
                 ok: false,

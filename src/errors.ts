@@ -20,13 +20,13 @@
  *
  * New codes may be added in minor versions. Handle unknown codes like `UNKNOWN`.
  */
-export const ERROR_CODES = [
+export const ERROR_CODES = Object.freeze([
     'PASSWORD_REQUIRED',
     'INVALID_PASSWORD',
     'INVALID_INPUT',
     'DISPOSED',
     'UNKNOWN',
-] as const;
+] as const);
 
 /** Machine-readable error category of a failed operation, see `ERROR_CODES`. */
 export type ErrorCode = (typeof ERROR_CODES)[number];
@@ -56,6 +56,16 @@ export interface RawError {
 /** Which public operation produced a raw error; decides how password errors are reported. */
 export type ErrorContext = 'loadPdf' | 'loadPdfWithPassword' | 'document';
 
+/**
+ * Code for a password error, by operation: only the load operations involve a
+ * password chosen by the caller.
+ */
+const PASSWORD_CODE_BY_CONTEXT = {
+    loadPdf: 'PASSWORD_REQUIRED',
+    loadPdfWithPassword: 'INVALID_PASSWORD',
+    document: 'UNKNOWN',
+} as const satisfies Record<ErrorContext, ErrorCode>;
+
 /** Code for every kind whose meaning does not depend on the operation. */
 const CODE_BY_KIND = {
     damaged_pdf: 'INVALID_INPUT',
@@ -71,9 +81,7 @@ function isRawErrorKind(kind: unknown): kind is RawErrorKind {
 /** Map a wrapper error kind to the public error code. Unknown kinds map to UNKNOWN. */
 export function errorCodeOf(kind: unknown, context: ErrorContext): ErrorCode {
     if (!isRawErrorKind(kind)) return 'UNKNOWN';
-    if (kind === 'password') {
-        return context === 'loadPdf' ? 'PASSWORD_REQUIRED' : 'INVALID_PASSWORD';
-    }
+    if (kind === 'password') return PASSWORD_CODE_BY_CONTEXT[context];
     return CODE_BY_KIND[kind];
 }
 

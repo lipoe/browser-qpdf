@@ -79,6 +79,20 @@ describe('Error codes', () => {
             expect(call()).toEqual({ ok: false, code: 'INVALID_INPUT', error: 'Input must be a Uint8Array' });
         });
 
+        it.each([undefined, null, 123, {}])('non-string password %s returns INVALID_INPUT', (password) => {
+            let called = false;
+            setMock('loadPdfWithPassword', () => {
+                called = true;
+                return { success: true };
+            });
+            expect(qpdf.loadPdfWithPassword(PDF, password as unknown as string)).toEqual({
+                ok: false,
+                code: 'INVALID_INPUT',
+                error: 'Password must be a string',
+            });
+            expect(called).toBe(false);
+        });
+
         it('size limit returns INVALID_INPUT', () => {
             const oversized = Object.create(Uint8Array.prototype);
             Object.defineProperty(oversized, 'byteLength', { value: 256 * 1024 * 1024 + 1 });
@@ -103,7 +117,7 @@ describe('Error codes', () => {
         const kindToCode = [
             ['invalid_argument', 'INVALID_INPUT'],
             ['damaged_pdf', 'INVALID_INPUT'],
-            ['password', 'INVALID_PASSWORD'],
+            ['password', 'UNKNOWN'], // no caller-provided password involved
             ['disposed', 'DISPOSED'],
             ['unknown', 'UNKNOWN'],
             [undefined, 'UNKNOWN'],
@@ -219,6 +233,22 @@ describe('writePdf options and isEncrypted', () => {
         expect(received).toBe(expected);
     });
 
+    it.each([
+        [{ preserveEncryption: 'false' }, 'Invalid option: preserveEncryption must be a boolean'],
+        [{ preserveEncryption: 0 }, 'Invalid option: preserveEncryption must be a boolean'],
+        [{ preserveEncryption: null }, 'Invalid option: preserveEncryption must be a boolean'],
+        [null, 'Invalid options: must be an object'],
+        ['x', 'Invalid options: must be an object'],
+    ])('writePdf(%j) returns INVALID_INPUT without calling WASM', (options, error) => {
+        let called = false;
+        setMock('writePdf', () => {
+            called = true;
+            return new Uint8Array(1);
+        });
+        expect(doc.writePdf(options as never)).toEqual({ ok: false, code: 'INVALID_INPUT', error });
+        expect(called).toBe(false);
+    });
+
     it.each([true, false])('isEncrypted returns %s from the wrapper', (value) => {
         setMock('isEncrypted', () => value);
         expect(doc.isEncrypted()).toEqual({ ok: true, value });
@@ -226,6 +256,11 @@ describe('writePdf options and isEncrypted', () => {
 });
 
 describe('Error contract consistency', () => {
+    it('ERROR_CODES cannot be modified at runtime', () => {
+        expect(Object.isFrozen(ERROR_CODES)).toBe(true);
+        expect(() => (ERROR_CODES as unknown as string[]).push('NEW')).toThrow(TypeError);
+    });
+
     it('maps every wrapper error kind to a public code in every context', () => {
         for (const kind of RAW_ERROR_KINDS) {
             for (const context of ['loadPdf', 'loadPdfWithPassword', 'document'] as const) {
