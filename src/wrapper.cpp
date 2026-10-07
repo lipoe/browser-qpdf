@@ -26,14 +26,55 @@
 #include <qpdf/QPDFWriter.hh>
 #include <qpdf/Buffer.hh>
 #include <qpdf/QIntC.hh>
+#include <qpdf/QUtil.hh>
+#include <qpdf/RandomDataProvider.hh>
+
+#include <emscripten/em_js.h>
 
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 #include <cstring>
 #include <set>
 
 using namespace emscripten;
+
+// --- Random data source ---
+//
+// qpdf needs cryptographically secure random bytes for AES (IVs) and AES-256
+// (key derivation). Its default source reads /dev/urandom, which does not exist
+// in this filesystem-free WASM build. The Web Crypto API is available in
+// browsers, Web Workers and Node >= 18 via globalThis.crypto.
+
+// Fills `len` bytes at `data` from crypto.getRandomValues (max 65536 bytes per
+// call). Returns 0 if no Web Crypto implementation is available.
+EM_JS(int, fill_with_web_crypto_random, (unsigned char* data, size_t len), {
+    var webCrypto = globalThis['crypto'];
+    if (!webCrypto || typeof webCrypto['getRandomValues'] !== 'function') {
+        return 0;
+    }
+    for (var offset = 0; offset < len; offset += 65536) {
+        var end = Math.min(offset + 65536, len);
+        webCrypto['getRandomValues'](HEAPU8.subarray(data + offset, data + end));
+    }
+    return 1;
+});
+
+class WebCryptoRandomDataProvider : public RandomDataProvider {
+public:
+    void provideRandomData(unsigned char* data, size_t len) override {
+        if (!fill_with_web_crypto_random(data, len)) {
+            throw std::runtime_error(
+                "no secure random source available: globalThis.crypto.getRandomValues is missing");
+        }
+    }
+};
+
+// Registered once at module initialization, before any QPDF instance exists.
+static WebCryptoRandomDataProvider webCryptoRandomDataProvider;
+[[maybe_unused]] static bool const webCryptoRandomDataProviderRegistered =
+    (QUtil::setRandomDataProvider(&webCryptoRandomDataProvider), true);
 
 // --- Helper: create a success result ---
 static val makeSuccess() {
