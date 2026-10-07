@@ -76,6 +76,18 @@ function callRaw<T>(
     }
 }
 
+/**
+ * Exception boundary of the public API: every public operation runs inside
+ * guarded(), so no operation ever throws (mirrors guarded() in wrapper.cpp).
+ */
+function guarded<T>(operation: () => Result<T>): Result<T> {
+    try {
+        return operation();
+    } catch (err: unknown) {
+        return fromException(err, 'Unexpected error');
+    }
+}
+
 /** Release all WASM memory of a wrapper, including the Embind object itself. */
 function destroy(wrapper: RawWrapper): void {
     wrapper.close();
@@ -174,7 +186,7 @@ export async function createQpdfImageStreams(
              * object is freed, so every operation is rejected here.
              */
             function withDocument<T>(operation: () => Result<T>): Result<T> {
-                return closed ? disposed() : operation();
+                return closed ? disposed() : guarded(operation);
             }
 
             return {
@@ -274,7 +286,11 @@ export async function createQpdfImageStreams(
                 close(): void {
                     if (closed) return; // no-op on subsequent calls
                     closed = true;
-                    destroy(wrapper);
+                    try {
+                        destroy(wrapper);
+                    } catch {
+                        // close() never throws; the document is unusable either way
+                    }
                 },
             };
         }
@@ -293,9 +309,10 @@ export async function createQpdfImageStreams(
                     const wrapper = new wasmModule.QpdfWasmWrapper();
                     try {
                         const result = loadInto(wrapper);
-                        if (result.success) return wrapper;
+                        // Only an explicit success opens a document; anything else is an error
+                        if (result?.success === true) return wrapper;
                         destroy(wrapper);
-                        return result;
+                        return isRawError(result) ? result : { success: false, kind: 'unknown' };
                     } catch (err: unknown) {
                         destroy(wrapper);
                         throw err;
@@ -309,15 +326,16 @@ export async function createQpdfImageStreams(
 
         return {
             loadPdf(data: Uint8Array): Result<PdfDocument> {
-                return load(data, 'loadPdf', (wrapper) => wrapper.loadPdf(data));
+                return guarded(() => load(data, 'loadPdf', (wrapper) => wrapper.loadPdf(data)));
             },
 
             loadPdfWithPassword(data: Uint8Array, password: string): Result<PdfDocument> {
-                return (
-                    validatePassword(password) ??
-                    load(data, 'loadPdfWithPassword', (wrapper) =>
-                        wrapper.loadPdfWithPassword(data, password)
-                    )
+                return guarded(
+                    () =>
+                        validatePassword(password) ??
+                        load(data, 'loadPdfWithPassword', (wrapper) =>
+                            wrapper.loadPdfWithPassword(data, password)
+                        )
                 );
             },
         };

@@ -106,7 +106,8 @@ export function isRawError(result: unknown): result is RawError {
 }
 
 export function fromRawError(raw: RawError, fallbackMessage: string, context: ErrorContext): Failure {
-    return failure(errorCodeOf(raw.kind, context), raw.error || fallbackMessage);
+    const message = typeof raw.error === 'string' && raw.error ? raw.error : fallbackMessage;
+    return failure(errorCodeOf(raw.kind, context), message);
 }
 
 export function fromException(err: unknown, fallbackMessage: string): Failure {

@@ -4,9 +4,10 @@
  * any kind, exceptions, successes) on every public operation.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, beforeEach } from 'vitest';
 import * as fc from 'fast-check';
-import { createQpdfImageStreams, ERROR_CODES, type PdfDocument } from '../../src/index.js';
+import { createQpdfImageStreams, type PdfDocument } from '../../src/index.js';
+import { expectWellFormedResult } from '../support/api-invariants.js';
 import { mockWasm, resetMockWasm } from '../__mocks__/qpdf-image-stream.js';
 
 /** Arbitrary behavior of a raw wrapper method. */
@@ -82,15 +83,6 @@ function run(doc: PdfDocument, o: Operation) {
     }
 }
 
-function expectWellFormed(result: unknown) {
-    if (result === undefined) return;
-    const r = result as { ok: boolean; code?: unknown; error?: unknown };
-    if (r.ok) return;
-    expect(ERROR_CODES).toContain(r.code);
-    expect(typeof r.error).toBe('string');
-    expect((r.error as string).length).toBeGreaterThan(0);
-}
-
 describe('Property: every error result has a known code and a message', () => {
     beforeEach(() => resetMockWasm());
 
@@ -107,7 +99,7 @@ describe('Property: every error result has a known code and a message', () => {
                     const input = validInput ? new Uint8Array([1]) : ('x' as unknown as Uint8Array);
                     const result =
                         password === undefined ? qpdf.loadPdf(input) : qpdf.loadPdfWithPassword(input, password);
-                    expectWellFormed(result);
+                    expectWellFormedResult(result);
                     if (result.ok) result.value.close();
                 }
             ),
@@ -131,7 +123,7 @@ describe('Property: every error result has a known code and a message', () => {
                         mockWasm.replaceImageStream = apply(behavior, { success: true });
                         mockWasm.isEncrypted = apply(behavior, false);
                         mockWasm.writePdf = apply(behavior, new Uint8Array(1));
-                        expectWellFormed(run(loaded.value, o));
+                        expectWellFormedResult(run(loaded.value, o));
                     }
                 }
             ),
