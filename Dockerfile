@@ -3,6 +3,9 @@
 #   docker build -t qpdf-wasm-builder .
 #   docker run --rm -v "${PWD}\dist:/out" qpdf-wasm-builder   (PowerShell)
 #   docker run --rm -v "$(pwd)/dist:/out" qpdf-wasm-builder   (bash)
+#
+# The static libraries (zlib, libjpeg-turbo, qpdf) are built in a cached image
+# layer; changes to src/ only re-run the final link step.
 FROM emscripten/emsdk:3.1.74
 
 # Install required build tools
@@ -21,10 +24,9 @@ WORKDIR /build
 ARG QPDF_VERSION=v12.4.2
 RUN git clone --depth 1 --branch "${QPDF_VERSION}" https://github.com/qpdf/qpdf.git qpdf-src
 
-# Copy source tree into container
+# Dependencies: build static libraries (cached until these inputs change)
 COPY build-wasm.sh ./
 COPY patches/ ./patches/
-COPY src/ ./src/
 COPY deps/ ./deps/
 
 # Fix Windows CRLF line endings in all text files
@@ -35,11 +37,16 @@ RUN find . -type f \( -name '*.sh' -o -name 'configure' -o -name 'config.*' \
     -o -name '*.cpp' -o -name '*.h' -o -name '*.c' \) \
     -exec sed -i 's/\r$//' {} + && \
     chmod +x build-wasm.sh && \
-    chmod +x deps/zlib/configure
+    chmod +x deps/zlib/configure && \
+    ./build-wasm.sh deps
 
-# Entry point: run the build, then copy artifacts to /out volume mount.
+# Wrapper source: only the link step depends on it
+COPY src/ ./src/
+RUN find src -type f \( -name '*.cpp' -o -name '*.h' \) -exec sed -i 's/\r$//' {} +
+
+# Entry point: link the WASM module, then copy artifacts to /out volume mount.
 ENTRYPOINT ["/bin/bash", "-c", "\
-    ./build-wasm.sh && \
+    ./build-wasm.sh wasm && \
     mkdir -p /out && \
     cp dist/qpdf-image-stream.js /out/ && \
     cp dist/qpdf-image-stream.wasm /out/ && \
