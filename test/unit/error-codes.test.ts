@@ -11,6 +11,7 @@ import { readFileSync } from 'node:fs';
 import { createQpdfImageStreams, ERROR_CODES, type QpdfImageStreams, type PdfDocument } from '../../src/index.js';
 import { RAW_ERROR_KINDS, errorCodeOf } from '../../src/errors.js';
 import { mockWasm, resetMockWasm } from '../__mocks__/qpdf-image-stream.js';
+import { DOCUMENT_OPERATIONS, WRAPPER_BACKED_OPERATIONS } from '../support/api-invariants.js';
 
 const PDF = new Uint8Array([37, 80, 68, 70]);
 const rawError = (kind: string | undefined, error = 'qpdf message') => ({ success: false, kind, error });
@@ -105,14 +106,12 @@ describe('Error codes', () => {
     });
 
     describe('document operations', () => {
-        const operations: Array<[string, MockKey, (doc: PdfDocument) => unknown]> = [
-            ['getImages', 'getImages', (doc) => doc.getImages()],
-            ['getImageStreamData', 'getImageStreamData', (doc) => doc.getImageStreamData(1, 0)],
-            ['getRawImageStreamData', 'getRawImageStreamData', (doc) => doc.getRawImageStreamData(1, 0)],
-            ['replaceImageStream', 'replaceImageStream', (doc) => doc.replaceImageStream(1, 0, new Uint8Array(1))],
-            ['isEncrypted', 'isEncrypted', (doc) => doc.isEncrypted()],
-            ['writePdf', 'writePdf', (doc) => doc.writePdf()],
-        ];
+        // Wrapper-backed operations with valid arguments (from the shared API list)
+        const operations: Array<[string, MockKey, (doc: PdfDocument) => unknown]> =
+            WRAPPER_BACKED_OPERATIONS.map((name) => {
+                const operation = DOCUMENT_OPERATIONS[name];
+                return [name, name as MockKey, (doc) => operation.call(doc, operation.validArgs)];
+            });
 
         const kindToCode = [
             ['invalid_argument', 'INVALID_INPUT'],
