@@ -6,16 +6,8 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import * as fc from 'fast-check';
-import { createQpdfImageStreams, type ErrorCode, type PdfDocument } from '../../src/index.js';
+import { createQpdfImageStreams, ERROR_CODES, type PdfDocument } from '../../src/index.js';
 import { mockWasm, resetMockWasm } from '../__mocks__/qpdf-image-stream.js';
-
-const ERROR_CODES: readonly ErrorCode[] = [
-    'PASSWORD_REQUIRED',
-    'INVALID_PASSWORD',
-    'INVALID_INPUT',
-    'DISPOSED',
-    'UNKNOWN',
-];
 
 /** Arbitrary behavior of a raw wrapper method. */
 const wrapperBehavior = fc.oneof(

@@ -7,7 +7,9 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { createQpdfImageStreams, type QpdfImageStreams, type PdfDocument } from '../../src/index.js';
+import { readFileSync } from 'node:fs';
+import { createQpdfImageStreams, ERROR_CODES, type QpdfImageStreams, type PdfDocument } from '../../src/index.js';
+import { RAW_ERROR_KINDS, errorCodeOf } from '../../src/errors.js';
 import { mockWasm, resetMockWasm } from '../__mocks__/qpdf-image-stream.js';
 
 const PDF = new Uint8Array([37, 80, 68, 70]);
@@ -220,5 +222,21 @@ describe('writePdf options and isEncrypted', () => {
     it.each([true, false])('isEncrypted returns %s from the wrapper', (value) => {
         setMock('isEncrypted', () => value);
         expect(doc.isEncrypted()).toEqual({ ok: true, value });
+    });
+});
+
+describe('Error contract consistency', () => {
+    it('maps every wrapper error kind to a public code in every context', () => {
+        for (const kind of RAW_ERROR_KINDS) {
+            for (const context of ['loadPdf', 'loadPdfWithPassword', 'document'] as const) {
+                expect(ERROR_CODES).toContain(errorCodeOf(kind, context));
+            }
+        }
+    });
+
+    it('documents exactly the exported error codes in the README table', () => {
+        const readme = readFileSync(new URL('../../README.md', import.meta.url), 'utf8');
+        const documented = [...readme.matchAll(/^\| `([A-Z_]+)` \|/gm)].map((m) => m[1]);
+        expect(documented).toEqual([...ERROR_CODES]);
     });
 });

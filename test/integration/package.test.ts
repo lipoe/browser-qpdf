@@ -22,6 +22,7 @@ const TSC = join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc');
 const CONSUMER_TS = `
 import {
     createQpdfImageStreams,
+    ERROR_CODES,
     type CreateOptions,
     type ErrorCode,
     type ImageInfo,
@@ -52,6 +53,8 @@ function codeOf(result: Result<unknown>): ErrorCode | 'OK' {
     return result.ok ? 'OK' : result.code;
 }
 
+const knownCodes: readonly ErrorCode[] = ERROR_CODES;
+
 export async function decryptPdf(bytes: Uint8Array, password: string): Promise<Result<Uint8Array>> {
     const qpdf: QpdfImageStreams = await createQpdfImageStreams();
     const loaded = qpdf.loadPdfWithPassword(bytes, password);
@@ -64,6 +67,7 @@ export async function decryptPdf(bytes: Uint8Array, password: string): Promise<R
     const images = doc.getImages();
     if (images.ok) images.value.map(describeImage);
     void codeOf(encrypted);
+    void knownCodes;
     void metadata;
     void options;
     const out = doc.writePdf(write);
@@ -75,7 +79,7 @@ export async function decryptPdf(bytes: Uint8Array, password: string): Promise<R
 /** Node smoke test against the installed package. */
 const CONSUMER_MJS = `
 import { readFileSync } from 'node:fs';
-import { createQpdfImageStreams } from '@lipoe/browser-qpdf';
+import { createQpdfImageStreams, ERROR_CODES } from '@lipoe/browser-qpdf';
 
 const [fixture, password] = process.argv.slice(2);
 const qpdf = await createQpdfImageStreams();
@@ -91,6 +95,7 @@ console.log(JSON.stringify({
     plainOpens: reloaded.ok,
     plainEncrypted: reloaded.ok && reloaded.value.isEncrypted().value,
     images: reloaded.ok && reloaded.value.getImages().value.length,
+    errorCodes: ERROR_CODES,
 }));
 `;
 
@@ -140,12 +145,14 @@ describe('Published package (npm pack)', () => {
         if (workDir) rmSync(workDir, { recursive: true, force: true });
     });
 
-    it('contains exactly the runtime files, all type declarations and notices', () => {
+    it('contains exactly the runtime modules, all type declarations and notices', () => {
         expect(packedFiles).toEqual(
             [
                 'LICENSE',
                 'README.md',
                 'THIRD-PARTY-NOTICES',
+                'dist/errors.d.ts',
+                'dist/errors.js',
                 'dist/index.d.ts',
                 'dist/index.js',
                 'dist/qpdf-image-stream.js',
@@ -180,6 +187,7 @@ describe('Published package (npm pack)', () => {
             plainOpens: true,
             plainEncrypted: false,
             images: 3,
+            errorCodes: ['PASSWORD_REQUIRED', 'INVALID_PASSWORD', 'INVALID_INPUT', 'DISPOSED', 'UNKNOWN'],
         });
     });
 });

@@ -17,32 +17,60 @@ export function readJson<T>(filename: string): T {
     return JSON.parse(readFileSync(join(FIXTURES_DIR, filename), 'utf8')) as T;
 }
 
-/** Raw Embind wrapper from dist/, used only for internals not in the public API (page count). */
+/** Value of a successful result; throws with code and message otherwise. */
+export function unwrap<T>(result: { ok: true; value: T } | { ok: false; code?: string; error: string }): T {
+    if (!result.ok) throw new Error(`unexpected error result: ${result.code ?? ''} ${result.error}`);
+    return result.value;
+}
+
+/** Raw error object of the C++ wrapper. */
+export interface RawError {
+    success: false;
+    kind: string;
+    error: string;
+}
+
+/** Raw Embind wrapper from dist/, for internals not in the public API. */
+export interface RawWrapper {
+    loadPdf(data: Uint8Array): { success: true } | RawError;
+    loadPdfWithPassword(data: Uint8Array, password: string): { success: true } | RawError;
+    getImages(recursive: boolean): unknown;
+    getImageStreamData(objId: number, generation: number): unknown;
+    getRawImageStreamData(objId: number, generation: number): unknown;
+    replaceImageStream(objId: number, generation: number, data: Uint8Array, metadata: unknown): unknown;
+    isEncrypted(): unknown;
+    writePdf(preserveEncryption: boolean): unknown;
+    getPageCount(): number;
+    close(): void;
+    delete(): void;
+}
+
 interface RawModule {
-    QpdfWasmWrapper: new () => {
-        loadPdf(data: Uint8Array): { success: boolean };
-        loadPdfWithPassword(data: Uint8Array, password: string): { success: boolean };
-        getPageCount(): number;
-        close(): void;
-        delete(): void;
-    };
+    QpdfWasmWrapper: new () => RawWrapper;
 }
 
 let rawModule: Promise<RawModule> | undefined;
 
-/** Page count of a PDF, read via the raw wrapper (not part of the public API). */
-export async function pageCount(bytes: Uint8Array, password?: string): Promise<number> {
+/** Run `use` with a fresh raw wrapper instance and free it afterwards. */
+export async function withRawWrapper<T>(use: (wrapper: RawWrapper) => T): Promise<T> {
     rawModule ??= import('../../dist/qpdf-image-stream.js' as string).then(
         (m: { default: () => Promise<RawModule> }) => m.default()
     );
     const wrapper = new (await rawModule).QpdfWasmWrapper();
     try {
-        const loaded =
-            password === undefined ? wrapper.loadPdf(bytes) : wrapper.loadPdfWithPassword(bytes, password);
-        if (!loaded.success) throw new Error('raw load failed');
-        return wrapper.getPageCount();
+        return use(wrapper);
     } finally {
         wrapper.close();
         wrapper.delete();
     }
+}
+
+/** Page count of a PDF, read via the raw wrapper (not part of the public API). */
+export function pageCount(bytes: Uint8Array, password?: string): Promise<number> {
+    return withRawWrapper((wrapper) => {
+        const loaded =
+            password === undefined ? wrapper.loadPdf(bytes) : wrapper.loadPdfWithPassword(bytes, password);
+        if (!loaded.success) throw new Error(`raw load failed: ${loaded.error}`);
+        return wrapper.getPageCount();
+    });
 }

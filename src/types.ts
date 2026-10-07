@@ -4,24 +4,7 @@
  * These types define the ergonomic, type-safe API surface exposed to consumers.
  */
 
-/**
- * Machine-readable error category of a failed operation.
- *
- * - `PASSWORD_REQUIRED`: `loadPdf` was called on a PDF that needs a password to open
- * - `INVALID_PASSWORD`: `loadPdfWithPassword` was called with a password that does not open the PDF
- * - `INVALID_INPUT`: invalid arguments (wrong type, size limit, object IDs, metadata)
- *   or data that cannot be read as a PDF
- * - `DISPOSED`: the document was already closed
- * - `UNKNOWN`: any other failure; see `error` for details
- *
- * New codes may be added in minor versions. Handle unknown codes like `UNKNOWN`.
- */
-export type ErrorCode =
-    | 'PASSWORD_REQUIRED'
-    | 'INVALID_PASSWORD'
-    | 'INVALID_INPUT'
-    | 'DISPOSED'
-    | 'UNKNOWN';
+import type { ErrorCode } from './errors.js';
 
 /**
  * Discriminated union representing either a successful result or an error.

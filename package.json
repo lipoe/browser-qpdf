@@ -12,6 +12,8 @@
     "./qpdf-image-stream.wasm": "./dist/qpdf-image-stream.wasm"
   },
   "files": [
+    "dist/errors.js",
+    "dist/errors.d.ts",
     "dist/index.js",
     "dist/index.d.ts",
     "dist/types.d.ts",

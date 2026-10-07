@@ -23,7 +23,6 @@
 
 import type {
     CreateOptions,
-    ErrorCode,
     QpdfImageStreams,
     Result,
     PdfDocument,
@@ -32,9 +31,21 @@ import type {
     WriteOptions,
 } from './types.js';
 
+import {
+    disposed,
+    fromException,
+    fromRawError,
+    invalidInput,
+    isRawError,
+    type ErrorContext,
+    type RawError,
+} from './errors.js';
+
+// Public error contract
+export { ERROR_CODES, type ErrorCode } from './errors.js';
+
 // Re-export all public types
 export type {
-    ErrorCode,
     Result,
     ImageInfo,
     ImageMetadata,
@@ -56,19 +67,6 @@ interface WasmModule {
     QpdfWasmWrapper: new () => RawWrapper;
 }
 
-/**
- * Technical error category reported by the C++ wrapper, derived from the
- * exception type (QPDFExc error code), never from message texts.
- */
-type RawErrorKind = 'password' | 'damaged_pdf' | 'invalid_argument' | 'disposed' | 'unknown';
-
-/** Error object returned by the C++ wrapper. */
-interface RawError {
-    success: false;
-    kind?: RawErrorKind;
-    error?: string;
-}
-
 /** Status object returned by C++ wrapper operations without a value. */
 type RawStatus = { success: true } | RawError;
 
@@ -85,54 +83,10 @@ interface RawWrapper {
     close(): void;
     getPageCount(): number;
     /** Embind: frees the C++ object itself. */
-    delete?(): void;
+    delete(): void;
 }
 
-// --- Error mapping (single place where error codes are decided) ---
-
-/** Which public operation produced a raw error; decides how password errors are reported. */
-type ErrorContext = 'loadPdf' | 'loadPdfWithPassword' | 'document';
-
-const DISPOSED_MESSAGE = 'Instance has been disposed';
-
-function failure(code: ErrorCode, error: string): { ok: false; code: ErrorCode; error: string } {
-    return { ok: false, code, error };
-}
-
-const invalidInput = (error: string) => failure('INVALID_INPUT', error);
-const disposed = () => failure('DISPOSED', DISPOSED_MESSAGE);
-
-function errorCodeOf(kind: RawErrorKind | undefined, context: ErrorContext): ErrorCode {
-    switch (kind) {
-        case 'password':
-            return context === 'loadPdf' ? 'PASSWORD_REQUIRED' : 'INVALID_PASSWORD';
-        case 'damaged_pdf':
-        case 'invalid_argument':
-            return 'INVALID_INPUT';
-        case 'disposed':
-            return 'DISPOSED';
-        default:
-            return 'UNKNOWN';
-    }
-}
-
-function isRawError(result: unknown): result is RawError {
-    return (
-        result !== null &&
-        typeof result === 'object' &&
-        'success' in result &&
-        !(result as { success: unknown }).success
-    );
-}
-
-function fromRawError(raw: RawError, fallbackMessage: string, context: ErrorContext) {
-    return failure(errorCodeOf(raw.kind, context), raw.error || fallbackMessage);
-}
-
-function fromException(err: unknown, fallbackMessage: string) {
-    const message = err instanceof Error ? err.message : String(err);
-    return failure('UNKNOWN', message || fallbackMessage);
-}
+// --- Calling the raw wrapper (error mapping: see errors.ts) ---
 
 /**
  * Call a raw wrapper method and convert its result: error objects and
@@ -156,7 +110,7 @@ function callRaw<T>(
 /** Release all WASM memory of a wrapper, including the Embind object itself. */
 function destroy(wrapper: RawWrapper): void {
     wrapper.close();
-    wrapper.delete?.();
+    wrapper.delete();
 }
 
 /** Copy a typed_memory_view into a new Uint8Array so the data outlives the WASM buffer. */

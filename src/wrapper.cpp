@@ -121,6 +121,33 @@ static val makeNoPdfError() {
     return makeError("No PDF loaded", "unknown");
 }
 
+// --- Exception boundary ---
+
+// Runs `body` and converts every C++ exception into an error result. This is
+// the only place where exceptions are caught and classified.
+template <typename Body>
+static val guarded(Body&& body) {
+    try {
+        return body();
+    } catch (QPDFExc const& e) {
+        return makeError(e.what(), errorKindOf(e));
+    } catch (std::exception const& e) {
+        return makeError(e.what(), "unknown");
+    }
+}
+
+// Copies a JS Uint8Array into `target` (WASM memory).
+static void copyFromJs(val const& uint8Array, std::vector<uint8_t>& target) {
+    unsigned int length = uint8Array["length"].as<unsigned int>();
+    target.resize(length);
+    val memoryView = val::global("Uint8Array").new_(
+        val::module_property("HEAPU8")["buffer"],
+        reinterpret_cast<uintptr_t>(target.data()),
+        length
+    );
+    memoryView.call<void>("set", uint8Array);
+}
+
 // --- Main wrapper class ---
 
 class QpdfWasmWrapper {
@@ -128,88 +155,19 @@ public:
     QpdfWasmWrapper() : qpdf_(nullptr), closed_(false) {}
 
     /**
-     * Load a PDF from a Uint8Array (JS).
-     * Copies data from JS heap to C++ heap, then calls processMemoryFile.
-     * Returns {success: true} or {success: false, error: "..."}
+     * Load a PDF from a Uint8Array (JS) without password.
+     * Returns {success: true} or {success: false, kind, error}.
      */
     val loadPdf(val uint8Array) {
-        if (closed_) {
-            return makeDisposedError();
-        }
-
-        try {
-            // Read length and copy from JS heap to C++ heap
-            unsigned int length = uint8Array["length"].as<unsigned int>();
-            inputBuffer_.resize(length);
-
-            // Create a view into WASM memory at the location of our buffer
-            val memoryView = val::global("Uint8Array").new_(
-                val::module_property("HEAPU8")["buffer"],
-                reinterpret_cast<uintptr_t>(inputBuffer_.data()),
-                length
-            );
-            // Copy the JS Uint8Array into our WASM memory
-            memoryView.call<void>("set", uint8Array);
-
-            // Create a fresh QPDF instance
-            qpdf_ = std::make_unique<QPDF>();
-            qpdf_->processMemoryFile(
-                "input.pdf",
-                reinterpret_cast<char const*>(inputBuffer_.data()),
-                length,
-                nullptr  // no password
-            );
-
-            return makeSuccess();
-        } catch (QPDFExc const& e) {
-            qpdf_.reset();
-            return makeError(e.what(), errorKindOf(e));
-        } catch (std::exception const& e) {
-            qpdf_.reset();
-            return makeError(e.what(), "unknown");
-        }
+        return load(uint8Array, nullptr);
     }
 
     /**
      * Load an encrypted PDF from a Uint8Array with a password.
-     * Returns {success: true} or {success: false, error: "..."}
+     * Returns {success: true} or {success: false, kind, error}.
      */
     val loadPdfWithPassword(val uint8Array, std::string password) {
-        if (closed_) {
-            return makeDisposedError();
-        }
-
-        try {
-            // Read length and copy from JS heap to C++ heap
-            unsigned int length = uint8Array["length"].as<unsigned int>();
-            inputBuffer_.resize(length);
-
-            // Create a view into WASM memory at the location of our buffer
-            val memoryView = val::global("Uint8Array").new_(
-                val::module_property("HEAPU8")["buffer"],
-                reinterpret_cast<uintptr_t>(inputBuffer_.data()),
-                length
-            );
-            // Copy the JS Uint8Array into our WASM memory
-            memoryView.call<void>("set", uint8Array);
-
-            // Create a fresh QPDF instance
-            qpdf_ = std::make_unique<QPDF>();
-            qpdf_->processMemoryFile(
-                "input.pdf",
-                reinterpret_cast<char const*>(inputBuffer_.data()),
-                length,
-                password.c_str()
-            );
-
-            return makeSuccess();
-        } catch (QPDFExc const& e) {
-            qpdf_.reset();
-            return makeError(e.what(), errorKindOf(e));
-        } catch (std::exception const& e) {
-            qpdf_.reset();
-            return makeError(e.what(), "unknown");
-        }
+        return load(uint8Array, password.c_str());
     }
 
     /**
@@ -222,15 +180,10 @@ public:
      *
      * Deduplicates across pages using objId+generation.
      * When recursive=true, traverses Form XObjects (qpdf handles depth internally).
+     * Errors during traversal are not reported; the images found so far are returned.
      */
     val getImages(bool recursive) {
-        if (closed_) {
-            return makeDisposedError();
-        }
-        if (!qpdf_) {
-            return makeNoPdfError();
-        }
-
+        return withDocument([&]() {
         val result = val::array();
         std::set<QPDFObjGen> seen;
 
@@ -309,10 +262,13 @@ public:
                     });
             }
         } catch (std::exception const& /*e*/) {
-            // Return images collected so far on error
+            // Known implicit contract (kept for compatibility, see README):
+            // errors while traversing pages are swallowed and the images
+            // collected so far are returned as a successful result.
         }
 
         return result;
+        });
     }
 
     /**
@@ -321,33 +277,7 @@ public:
      * Decodes all filters (Flate, DCT, etc.) to produce raw pixel data.
      */
     val getImageStreamData(int objId, int generation) {
-        if (closed_) {
-            return makeDisposedError();
-        }
-        if (!qpdf_) {
-            return makeNoPdfError();
-        }
-
-        try {
-            QPDFObjectHandle obj = qpdf_->getObjectByID(objId, generation);
-            if (!obj.isStream()) {
-                return makeError(
-                    "Object " + std::to_string(objId) + " " + std::to_string(generation) + " is not a stream",
-                    "invalid_argument");
-            }
-
-            // Decode all filters to get raw pixel data
-            std::shared_ptr<Buffer> buf = obj.getStreamData(qpdf_dl_all);
-
-            // Copy into member buffer so the typed_memory_view stays valid
-            outputBuffer_.assign(buf->getBuffer(), buf->getBuffer() + buf->getSize());
-
-            return val(typed_memory_view(outputBuffer_.size(), outputBuffer_.data()));
-        } catch (QPDFExc const& e) {
-            return makeError(e.what(), errorKindOf(e));
-        } catch (std::exception const& e) {
-            return makeError(e.what(), "unknown");
-        }
+        return readStream(objId, generation, true);
     }
 
     /**
@@ -356,33 +286,7 @@ public:
      * Returns the stream bytes as-is (no filter decoding applied).
      */
     val getRawImageStreamData(int objId, int generation) {
-        if (closed_) {
-            return makeDisposedError();
-        }
-        if (!qpdf_) {
-            return makeNoPdfError();
-        }
-
-        try {
-            QPDFObjectHandle obj = qpdf_->getObjectByID(objId, generation);
-            if (!obj.isStream()) {
-                return makeError(
-                    "Object " + std::to_string(objId) + " " + std::to_string(generation) + " is not a stream",
-                    "invalid_argument");
-            }
-
-            // Get raw stream data without any decoding
-            std::shared_ptr<Buffer> buf = obj.getRawStreamData();
-
-            // Copy into member buffer so the typed_memory_view stays valid
-            outputBuffer_.assign(buf->getBuffer(), buf->getBuffer() + buf->getSize());
-
-            return val(typed_memory_view(outputBuffer_.size(), outputBuffer_.data()));
-        } catch (QPDFExc const& e) {
-            return makeError(e.what(), errorKindOf(e));
-        } catch (std::exception const& e) {
-            return makeError(e.what(), "unknown");
-        }
+        return readStream(objId, generation, false);
     }
 
     /**
@@ -400,14 +304,7 @@ public:
      * Returns {success: true} or {success: false, error: "..."}.
      */
     val replaceImageStream(int objId, int generation, val uint8Array, val metadata) {
-        if (closed_) {
-            return makeDisposedError();
-        }
-        if (!qpdf_) {
-            return makeNoPdfError();
-        }
-
-        try {
+        return withDocument([&]() {
             // Get the object and verify it's a stream
             QPDFObjectHandle obj = qpdf_->getObjectByID(objId, generation);
             if (!obj.isStream()) {
@@ -415,15 +312,9 @@ public:
             }
 
             // Copy the Uint8Array from JS to C++
-            unsigned int length = uint8Array["length"].as<unsigned int>();
-            std::vector<uint8_t> data(length);
-
-            val memoryView = val::global("Uint8Array").new_(
-                val::module_property("HEAPU8")["buffer"],
-                reinterpret_cast<uintptr_t>(data.data()),
-                length
-            );
-            memoryView.call<void>("set", uint8Array);
+            std::vector<uint8_t> data;
+            copyFromJs(uint8Array, data);
+            size_t length = data.size();
 
             // Read metadata fields from the val object
             int width = metadata["width"].as<int>();
@@ -500,11 +391,7 @@ public:
             }
 
             return makeSuccess();
-        } catch (QPDFExc const& e) {
-            return makeError(e.what(), errorKindOf(e));
-        } catch (std::exception const& e) {
-            return makeError(e.what(), "unknown");
-        }
+        });
     }
 
     /**
@@ -512,13 +399,7 @@ public:
      * Returns a boolean, or an error object if disposed / not loaded.
      */
     val isEncrypted() {
-        if (closed_) {
-            return makeDisposedError();
-        }
-        if (!qpdf_) {
-            return makeNoPdfError();
-        }
-        return val(qpdf_->isEncrypted());
+        return withDocument([&]() { return val(qpdf_->isEncrypted()); });
     }
 
     /**
@@ -535,14 +416,7 @@ public:
      * call that overwrites outputBuffer_).
      */
     val writePdf(bool preserveEncryption) {
-        if (closed_) {
-            return makeDisposedError();
-        }
-        if (!qpdf_) {
-            return makeNoPdfError();
-        }
-
-        try {
+        return withDocument([&]() {
             QPDFWriter writer(*qpdf_);
             writer.setOutputMemory();
             writer.setPreserveEncryption(preserveEncryption);
@@ -558,11 +432,7 @@ public:
             );
 
             return val(typed_memory_view(outputBuffer_.size(), outputBuffer_.data()));
-        } catch (QPDFExc const& e) {
-            return makeError(e.what(), errorKindOf(e));
-        } catch (std::exception const& e) {
-            return makeError(e.what(), "unknown");
-        }
+        });
     }
 
     /**
@@ -596,6 +466,64 @@ public:
     }
 
 private:
+    // Runs `body` on the loaded document: rejects disposed/unloaded instances
+    // and converts exceptions via guarded().
+    template <typename Body>
+    val withDocument(Body&& body) {
+        if (closed_) {
+            return makeDisposedError();
+        }
+        if (!qpdf_) {
+            return makeNoPdfError();
+        }
+        return guarded(body);
+    }
+
+    // Loads a PDF; password == nullptr means no password.
+    val load(val const& uint8Array, char const* password) {
+        if (closed_) {
+            return makeDisposedError();
+        }
+        val result = guarded([&]() {
+            // Copy from JS heap to C++ heap; qpdf reads from this buffer
+            copyFromJs(uint8Array, inputBuffer_);
+
+            // Create a fresh QPDF instance
+            qpdf_ = std::make_unique<QPDF>();
+            qpdf_->processMemoryFile(
+                "input.pdf",
+                reinterpret_cast<char const*>(inputBuffer_.data()),
+                inputBuffer_.size(),
+                password
+            );
+            return makeSuccess();
+        });
+        if (!result["success"].as<bool>()) {
+            qpdf_.reset();
+        }
+        return result;
+    }
+
+    // Reads stream data of an object, decoded (all filters) or raw.
+    val readStream(int objId, int generation, bool decode) {
+        return withDocument([&]() {
+            QPDFObjectHandle obj = qpdf_->getObjectByID(objId, generation);
+            if (!obj.isStream()) {
+                return makeError(
+                    "Object " + std::to_string(objId) + " " + std::to_string(generation) + " is not a stream",
+                    "invalid_argument");
+            }
+
+            std::shared_ptr<Buffer> buf =
+                decode ? obj.getStreamData(qpdf_dl_all) : obj.getRawStreamData();
+
+            // Copy into member buffer so the typed_memory_view stays valid
+            outputBuffer_.assign(buf->getBuffer(), buf->getBuffer() + buf->getSize());
+
+            return val(typed_memory_view(outputBuffer_.size(), outputBuffer_.data()));
+        });
+    }
+
     std::unique_ptr<QPDF> qpdf_;
     std::vector<uint8_t> inputBuffer_;   // Keeps PDF data alive for qpdf
     std::vector<uint8_t> outputBuffer_;  // Keeps typed_memory_view valid
