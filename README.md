@@ -230,7 +230,7 @@ qpdf CLI (local or via Docker): `npm run fixtures:encrypted`.
 
 ## API
 
-All operations return a `Result<T>` and never throw (`close()` returns nothing and never throws either):
+All load and document operations return a `Result<T>` and never throw (`close()` returns nothing and never throws either). The only exception is the factory `createQpdfImageStreams()`, whose promise rejects if the WASM module cannot be loaded:
 
 ```typescript
 type Result<T> =
