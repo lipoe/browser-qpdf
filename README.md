@@ -14,6 +14,17 @@ Browser-compatible WASM module exposing qpdf's library API for reading and repla
 - Write modified PDFs back to `Uint8Array`
 - No filesystem dependencies — works in browsers, web workers and Node >= 18 (random data comes from `crypto.getRandomValues`)
 
+## Why this package?
+
+Existing qpdf WebAssembly builds ([@neslinesli93/qpdf-wasm](https://github.com/neslinesli93/qpdf-wasm),
+[@jspawn/qpdf-wasm](https://github.com/jsscheller/qpdf-wasm) and tools built on them) expose
+only the qpdf **command line** (`callMain`) and exchange files through Emscripten's virtual
+file system. They offer no programmatic access to PDF objects or streams.
+
+This package binds qpdf's **library API** via Embind instead: PDFs go in and out as
+`Uint8Array`, and image XObjects can be enumerated, read and replaced directly. The build
+setup (Docker, zlib/libjpeg-turbo, libjpeg-turbo patch) follows @neslinesli93/qpdf-wasm.
+
 ## Prerequisites
 
 - [Docker](https://www.docker.com/) (for building the WASM module)
