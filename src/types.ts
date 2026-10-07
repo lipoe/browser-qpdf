@@ -76,7 +76,12 @@ export interface WriteOptions {
  * stream reading/replacement, PDF writing, and resource cleanup.
  */
 export interface PdfDocument {
-    /** Enumerate all image XObjects in the PDF. */
+    /**
+     * Enumerate all image XObjects in the PDF.
+     *
+     * Known limitation: errors while traversing the pages are not reported;
+     * the result is then `ok` with the images found up to that point.
+     */
     getImages(options?: { recursive?: boolean }): Result<ImageInfo[]>;
     /** Read decoded (decompressed) stream data for an image. */
     getImageStreamData(objId: number, generation: number): Result<Uint8Array>;

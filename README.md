@@ -247,6 +247,12 @@ wording may change.
 | `UNKNOWN` | Anything else, see `error` |
 
 New codes may be added in minor versions; treat unknown codes like `UNKNOWN`.
+All codes are also exported at runtime:
+
+```typescript
+import { ERROR_CODES, type ErrorCode } from '@lipoe/browser-qpdf';
+// ERROR_CODES: readonly ['PASSWORD_REQUIRED', 'INVALID_PASSWORD', 'INVALID_INPUT', 'DISPOSED', 'UNKNOWN']
+```
 
 ### `createQpdfImageStreams(options?): Promise<QpdfImageStreams>`
 
@@ -266,6 +272,11 @@ ignored for unencrypted PDFs.
 ### `PdfDocument.getImages(options?): Result<ImageInfo[]>`
 
 Enumerate all image XObjects. Pass `{ recursive: true }` to include nested images.
+
+> **Known limitation:** errors while traversing the pages (e.g. a damaged page
+> tree) are not reported. `getImages()` then returns `ok: true` with the images
+> found up to that point, so the list can be incomplete for damaged PDFs.
+> This behavior is kept for compatibility with 0.1.0.
 
 ### `PdfDocument.getImageStreamData(objId, generation): Result<Uint8Array>`
 
