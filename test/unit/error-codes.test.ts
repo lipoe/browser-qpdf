@@ -275,3 +275,64 @@ describe('Error contract consistency', () => {
         expect(documented).toEqual([...ERROR_CODES]);
     });
 });
+
+describe('Argument type validation (INVALID_INPUT, WASM not called)', () => {
+    let doc: PdfDocument;
+    let wasmCalled: boolean;
+
+    beforeEach(async () => {
+        resetMockWasm();
+        const loaded = (await createQpdfImageStreams()).loadPdf(PDF);
+        if (!loaded.ok) throw new Error(loaded.error);
+        doc = loaded.value;
+        wasmCalled = false;
+        setMock('getImages', () => {
+            wasmCalled = true;
+            return [];
+        });
+        setMock('replaceImageStream', () => {
+            wasmCalled = true;
+            return { success: true };
+        });
+    });
+
+    it.each([
+        [null, 'Invalid options: must be an object'],
+        [5, 'Invalid options: must be an object'],
+        [{ recursive: 'false' }, 'Invalid option: recursive must be a boolean'],
+        [{ recursive: 1 }, 'Invalid option: recursive must be a boolean'],
+    ])('getImages(%j)', (options, error) => {
+        expect(doc.getImages(options as never)).toEqual({ ok: false, code: 'INVALID_INPUT', error });
+        expect(wasmCalled).toBe(false);
+    });
+
+    it.each([
+        [null, 'Invalid metadata: must be an object'],
+        ['x', 'Invalid metadata: must be an object'],
+        [{ width: '5' }, 'Invalid metadata: width must be an integer'],
+        [{ height: 1.5 }, 'Invalid metadata: height must be an integer'],
+        [{ bitsPerComponent: NaN }, 'Invalid metadata: bitsPerComponent must be an integer'],
+        [{ width: -1 }, 'Invalid metadata: width must not be negative'],
+        [{ colorSpace: 5 }, 'Invalid metadata: colorSpace must be a string'],
+        [{ filter: {} }, 'Invalid metadata: filter must be a string'],
+    ])('replaceImageStream metadata %j', (metadata, error) => {
+        expect(doc.replaceImageStream(1, 0, new Uint8Array(1), metadata as never)).toEqual({
+            ok: false,
+            code: 'INVALID_INPUT',
+            error,
+        });
+        expect(wasmCalled).toBe(false);
+    });
+
+    it.each([
+        [undefined],
+        [{}],
+        [{ width: 0, height: 10, bitsPerComponent: 8, colorSpace: '/DeviceRGB', filter: 'DCTDecode' }],
+    ])('replaceImageStream accepts valid metadata %j', (metadata) => {
+        expect(doc.replaceImageStream(1, 0, new Uint8Array(1), metadata as never)).toEqual({
+            ok: true,
+            value: undefined,
+        });
+        expect(wasmCalled).toBe(true);
+    });
+});

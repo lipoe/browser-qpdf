@@ -210,6 +210,34 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             expect(api.loadPdf(bytes)).toEqual({ ok: false, code: 'INVALID_INPUT', error: "input.pdf: can't find startxref" });
         });
 
+        it('rejects wrong option and metadata types as INVALID_INPUT instead of coercing them', () => {
+            const doc = open('nested-forms.pdf');
+            const [image] = imagesOf(doc);
+            const invalid = (error: string) => ({ ok: false, code: 'INVALID_INPUT', error });
+
+            // previously treated as recursive: true
+            expect(doc.getImages({ recursive: 'false' as unknown as boolean })).toEqual(
+                invalid('Invalid option: recursive must be a boolean')
+            );
+            // previously coerced / truncated
+            expect(doc.replaceImageStream(image.objId, 0, new Uint8Array(1), { width: '5' as unknown as number })).toEqual(
+                invalid('Invalid metadata: width must be an integer')
+            );
+            expect(doc.replaceImageStream(image.objId, 0, new Uint8Array(1), { height: 1.5 })).toEqual(
+                invalid('Invalid metadata: height must be an integer')
+            );
+            // regression: threw a TypeError instead of returning a Result
+            expect(doc.replaceImageStream(image.objId, 0, new Uint8Array(1), { filter: 5 as unknown as string })).toEqual(
+                invalid('Invalid metadata: filter must be a string')
+            );
+            expect(doc.replaceImageStream(image.objId, 0, new Uint8Array(1), 'x' as never)).toEqual(
+                invalid('Invalid metadata: must be an object')
+            );
+            // the document is unchanged by rejected calls
+            expect(imagesOf(doc)).toEqual([image]);
+            doc.close();
+        });
+
         it('rejects invalid password and write option types as INVALID_INPUT (not Embind errors)', () => {
             const pdf = loadFixture('aes128-user.pdf');
             expect(api.loadPdfWithPassword(pdf, undefined as unknown as string)).toEqual({

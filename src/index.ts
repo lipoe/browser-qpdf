@@ -121,22 +121,43 @@ function validatePassword(password: string): Result<never> | undefined {
 }
 
 function validateWriteOptions(options?: WriteOptions): Result<never> | undefined {
+    if (!isOptionalObject(options)) return invalidInput('Invalid options: must be an object');
     if (options === undefined) return undefined;
-    if (options === null || typeof options !== 'object')
-        return invalidInput('Invalid options: must be an object');
     if (options.preserveEncryption !== undefined && typeof options.preserveEncryption !== 'boolean')
         return invalidInput('Invalid option: preserveEncryption must be a boolean');
     return undefined;
 }
 
+/** An options/metadata argument must be omitted or a plain object. */
+function isOptionalObject(value: unknown): boolean {
+    return value === undefined || (value !== null && typeof value === 'object');
+}
+
+function validateGetImagesOptions(options?: { recursive?: boolean }): Result<never> | undefined {
+    if (!isOptionalObject(options)) return invalidInput('Invalid options: must be an object');
+    if (options?.recursive !== undefined && typeof options.recursive !== 'boolean')
+        return invalidInput('Invalid option: recursive must be a boolean');
+    return undefined;
+}
+
+const INTEGER_METADATA_FIELDS = ['width', 'height', 'bitsPerComponent'] as const;
+const NAME_METADATA_FIELDS = ['colorSpace', 'filter'] as const;
+
 function validateMetadata(metadata?: Partial<ImageMetadata>): Result<never> | undefined {
+    if (!isOptionalObject(metadata)) return invalidInput('Invalid metadata: must be an object');
     if (!metadata) return undefined;
-    if (metadata.width !== undefined && metadata.width < 0)
-        return invalidInput('Invalid metadata: width must not be negative');
-    if (metadata.height !== undefined && metadata.height < 0)
-        return invalidInput('Invalid metadata: height must not be negative');
-    if (metadata.bitsPerComponent !== undefined && metadata.bitsPerComponent < 0)
-        return invalidInput('Invalid metadata: bitsPerComponent must not be negative');
+    for (const field of INTEGER_METADATA_FIELDS) {
+        const value: unknown = metadata[field];
+        if (value === undefined) continue;
+        if (typeof value !== 'number' || !Number.isInteger(value))
+            return invalidInput(`Invalid metadata: ${field} must be an integer`);
+        if (value < 0) return invalidInput(`Invalid metadata: ${field} must not be negative`);
+    }
+    for (const field of NAME_METADATA_FIELDS) {
+        const value: unknown = metadata[field];
+        if (value !== undefined && typeof value !== 'string')
+            return invalidInput(`Invalid metadata: ${field} must be a string`);
+    }
     return undefined;
 }
 
@@ -192,6 +213,8 @@ export async function createQpdfImageStreams(
             return {
                 getImages(options?: { recursive?: boolean }): Result<ImageInfo[]> {
                     return withDocument(() => {
+                        const invalid = validateGetImagesOptions(options);
+                        if (invalid) return invalid;
                         const recursive = options?.recursive ?? false;
                         return callRaw(
                             () => wrapper.getImages(recursive),

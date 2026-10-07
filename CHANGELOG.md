@@ -2,9 +2,9 @@
 
 ## 0.2.0
 
-Backward compatible for code that calls the API: unencrypted PDFs behave as
-in 0.1.0, existing error messages are unchanged, `writePdf()` without options
-keeps the encryption.
+Backward compatible for code that calls the API with the documented types:
+unencrypted PDFs behave as in 0.1.0, existing error messages are unchanged,
+`writePdf()` without options keeps the encryption.
 
 Type-level note: the failure branch of `Result<T>` now requires `code`. Code
 that only reads results is unaffected; code that *creates* failure results
@@ -18,6 +18,13 @@ typed as `Result<T>` (e.g. test doubles) must add a `code`.
 - `PdfDocument.writePdf(options?: WriteOptions)` with `preserveEncryption`
   (default `true`); `false` writes an unencrypted PDF. Exported type `WriteOptions`.
 - `PdfDocument.isEncrypted(): Result<boolean>`.
+
+### Changed
+- All arguments are type-checked and rejected with `INVALID_INPUT` instead of
+  being coerced. This only affects calls the TypeScript types already forbid,
+  e.g. from plain JavaScript: `getImages({ recursive: 'false' })` used to
+  enumerate recursively, `replaceImageStream(..., { width: '5' })` or
+  `{ height: 1.5 }` were silently converted.
 
 ### Fixed
 - AES-256 PDFs could not be opened at all (also owner-password-only ones),

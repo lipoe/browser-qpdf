@@ -230,7 +230,7 @@ qpdf CLI (local or via Docker): `npm run fixtures:encrypted`.
 
 ## API
 
-All operations return a `Result<T>` type instead of throwing exceptions:
+All operations return a `Result<T>` and never throw (`close()` returns nothing and never throws either):
 
 ```typescript
 type Result<T> =
@@ -245,7 +245,7 @@ wording may change.
 |---|---|
 | `PASSWORD_REQUIRED` | `loadPdf` on a PDF that needs a password to open |
 | `INVALID_PASSWORD` | `loadPdfWithPassword` with a password that does not open the PDF (also an empty password) |
-| `INVALID_INPUT` | Invalid arguments (type, 256 MB limit, object ID/generation, metadata, object is not a stream) or data that cannot be read as a PDF |
+| `INVALID_INPUT` | Invalid arguments (wrong type, 256 MB limit, object ID/generation, negative or non-integer metadata, object is not a stream) or data that cannot be read as a PDF |
 | `DISPOSED` | The document was already closed |
 | `UNKNOWN` | Anything else, see `error` |
 
