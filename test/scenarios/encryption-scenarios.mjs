@@ -11,9 +11,9 @@
 
 export const WRONG_PASSWORD = 'falsch';
 
-/** Reduce a Result to a comparable outcome: 'ok' or { error }. */
+/** Reduce a Result to a comparable outcome: 'ok' or { code, error }. */
 export function outcome(result) {
-    return result.ok ? 'ok' : { error: result.error };
+    return result.ok ? 'ok' : { code: result.code, error: result.error };
 }
 
 /** Outcome of a load attempt; closes the document again if it opened. */
@@ -128,7 +128,9 @@ export function observeEncryptedFixture(api, bytes, sourceBytes, fixture) {
     try {
         const images = doc.getImages();
         const decoded = decodedImages(doc);
+        const encrypted = doc.isEncrypted();
         observation.opened = {
+            isEncrypted: encrypted.ok ? encrypted.value : outcome(encrypted),
             imagesMatchSource:
                 images.ok &&
                 JSON.stringify(images.value.map(imageShape)) === JSON.stringify(sourceShapes) &&
@@ -145,6 +147,16 @@ export function observeEncryptedFixture(api, bytes, sourceBytes, fixture) {
             );
         }
 
+        // Decryption: write without encryption
+        const decrypted = doc.writePdf({ preserveEncryption: false });
+        observation.opened.writePdfDecrypted = outcome(decrypted);
+        if (decrypted.ok) {
+            Object.assign(
+                observation.opened,
+                prefixKeys('decrypted', observeWritten(api, decrypted.value, fixture.userPassword, sourceImages))
+            );
+        }
+
         // Compression path: replace the first image, then write (default options)
         const target = images.value[0];
         const replacement = new Uint8Array(sourceImages[0].length).fill(0x42);
@@ -158,6 +170,20 @@ export function observeEncryptedFixture(api, bytes, sourceBytes, fixture) {
             Object.assign(
                 observation.opened,
                 prefixKeys('replaced', observeWritten(api, replaced.value, fixture.userPassword, expected))
+            );
+        }
+
+        // Compression and decryption combined
+        const replacedDecrypted = doc.writePdf({ preserveEncryption: false });
+        observation.opened.writePdfAfterReplaceDecrypted = outcome(replacedDecrypted);
+        if (replacedDecrypted.ok) {
+            const expected = [replacement, ...sourceImages.slice(1)];
+            Object.assign(
+                observation.opened,
+                prefixKeys(
+                    'replacedDecrypted',
+                    observeWritten(api, replacedDecrypted.value, fixture.userPassword, expected)
+                )
             );
         }
     } finally {

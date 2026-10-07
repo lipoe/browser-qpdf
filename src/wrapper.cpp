@@ -14,13 +14,14 @@
  * 6. Explicit close() for memory management
  *
  * The wrapper catches all C++ exceptions at the boundary and returns
- * structured result objects {success, error} to JavaScript.
+ * structured result objects {success, kind, error} to JavaScript.
  */
 
 #include <emscripten/bind.h>
 #include <emscripten/val.h>
 
 #include <qpdf/QPDF.hh>
+#include <qpdf/QPDFExc.hh>
 #include <qpdf/QPDFPageDocumentHelper.hh>
 #include <qpdf/QPDFPageObjectHelper.hh>
 #include <qpdf/QPDFWriter.hh>
@@ -83,12 +84,41 @@ static val makeSuccess() {
     return result;
 }
 
-// --- Helper: create an error result ---
-static val makeError(std::string const& message) {
+// --- Error results ---
+//
+// Every error carries a technical `kind` derived from the exception type, so
+// the TypeScript layer can map errors to stable codes without parsing texts:
+//   password          QPDFExc with qpdf_e_password
+//   damaged_pdf       QPDFExc with qpdf_e_damaged_pdf (input is not a readable PDF)
+//   invalid_argument  caller passed an object reference that is not a stream
+//   disposed          close() was already called
+//   unknown           anything else
+
+static val makeError(std::string const& message, char const* kind) {
     val result = val::object();
     result.set("success", false);
+    result.set("kind", val(kind));
     result.set("error", val(message));
     return result;
+}
+
+static char const* errorKindOf(QPDFExc const& e) {
+    switch (e.getErrorCode()) {
+    case qpdf_e_password:
+        return "password";
+    case qpdf_e_damaged_pdf:
+        return "damaged_pdf";
+    default:
+        return "unknown";
+    }
+}
+
+static val makeDisposedError() {
+    return makeError("Instance has been disposed", "disposed");
+}
+
+static val makeNoPdfError() {
+    return makeError("No PDF loaded", "unknown");
 }
 
 // --- Main wrapper class ---
@@ -104,7 +134,7 @@ public:
      */
     val loadPdf(val uint8Array) {
         if (closed_) {
-            return makeError("Instance has been disposed");
+            return makeDisposedError();
         }
 
         try {
@@ -131,9 +161,12 @@ public:
             );
 
             return makeSuccess();
+        } catch (QPDFExc const& e) {
+            qpdf_.reset();
+            return makeError(e.what(), errorKindOf(e));
         } catch (std::exception const& e) {
             qpdf_.reset();
-            return makeError(e.what());
+            return makeError(e.what(), "unknown");
         }
     }
 
@@ -143,7 +176,7 @@ public:
      */
     val loadPdfWithPassword(val uint8Array, std::string password) {
         if (closed_) {
-            return makeError("Instance has been disposed");
+            return makeDisposedError();
         }
 
         try {
@@ -170,9 +203,12 @@ public:
             );
 
             return makeSuccess();
+        } catch (QPDFExc const& e) {
+            qpdf_.reset();
+            return makeError(e.what(), errorKindOf(e));
         } catch (std::exception const& e) {
             qpdf_.reset();
-            return makeError(e.what());
+            return makeError(e.what(), "unknown");
         }
     }
 
@@ -189,10 +225,10 @@ public:
      */
     val getImages(bool recursive) {
         if (closed_) {
-            return makeError("Instance has been disposed");
+            return makeDisposedError();
         }
         if (!qpdf_) {
-            return makeError("No PDF loaded");
+            return makeNoPdfError();
         }
 
         val result = val::array();
@@ -286,16 +322,18 @@ public:
      */
     val getImageStreamData(int objId, int generation) {
         if (closed_) {
-            return makeError("Instance has been disposed");
+            return makeDisposedError();
         }
         if (!qpdf_) {
-            return makeError("No PDF loaded");
+            return makeNoPdfError();
         }
 
         try {
             QPDFObjectHandle obj = qpdf_->getObjectByID(objId, generation);
             if (!obj.isStream()) {
-                return makeError("Object " + std::to_string(objId) + " " + std::to_string(generation) + " is not a stream");
+                return makeError(
+                    "Object " + std::to_string(objId) + " " + std::to_string(generation) + " is not a stream",
+                    "invalid_argument");
             }
 
             // Decode all filters to get raw pixel data
@@ -305,8 +343,10 @@ public:
             outputBuffer_.assign(buf->getBuffer(), buf->getBuffer() + buf->getSize());
 
             return val(typed_memory_view(outputBuffer_.size(), outputBuffer_.data()));
+        } catch (QPDFExc const& e) {
+            return makeError(e.what(), errorKindOf(e));
         } catch (std::exception const& e) {
-            return makeError(e.what());
+            return makeError(e.what(), "unknown");
         }
     }
 
@@ -317,16 +357,18 @@ public:
      */
     val getRawImageStreamData(int objId, int generation) {
         if (closed_) {
-            return makeError("Instance has been disposed");
+            return makeDisposedError();
         }
         if (!qpdf_) {
-            return makeError("No PDF loaded");
+            return makeNoPdfError();
         }
 
         try {
             QPDFObjectHandle obj = qpdf_->getObjectByID(objId, generation);
             if (!obj.isStream()) {
-                return makeError("Object " + std::to_string(objId) + " " + std::to_string(generation) + " is not a stream");
+                return makeError(
+                    "Object " + std::to_string(objId) + " " + std::to_string(generation) + " is not a stream",
+                    "invalid_argument");
             }
 
             // Get raw stream data without any decoding
@@ -336,8 +378,10 @@ public:
             outputBuffer_.assign(buf->getBuffer(), buf->getBuffer() + buf->getSize());
 
             return val(typed_memory_view(outputBuffer_.size(), outputBuffer_.data()));
+        } catch (QPDFExc const& e) {
+            return makeError(e.what(), errorKindOf(e));
         } catch (std::exception const& e) {
-            return makeError(e.what());
+            return makeError(e.what(), "unknown");
         }
     }
 
@@ -357,17 +401,17 @@ public:
      */
     val replaceImageStream(int objId, int generation, val uint8Array, val metadata) {
         if (closed_) {
-            return makeError("Instance has been disposed");
+            return makeDisposedError();
         }
         if (!qpdf_) {
-            return makeError("No PDF loaded");
+            return makeNoPdfError();
         }
 
         try {
             // Get the object and verify it's a stream
             QPDFObjectHandle obj = qpdf_->getObjectByID(objId, generation);
             if (!obj.isStream()) {
-                return makeError("Object is not a stream");
+                return makeError("Object is not a stream", "invalid_argument");
             }
 
             // Copy the Uint8Array from JS to C++
@@ -456,13 +500,32 @@ public:
             }
 
             return makeSuccess();
+        } catch (QPDFExc const& e) {
+            return makeError(e.what(), errorKindOf(e));
         } catch (std::exception const& e) {
-            return makeError(e.what());
+            return makeError(e.what(), "unknown");
         }
     }
 
     /**
+     * Whether the loaded (source) PDF is encrypted.
+     * Returns a boolean, or an error object if disposed / not loaded.
+     */
+    val isEncrypted() {
+        if (closed_) {
+            return makeDisposedError();
+        }
+        if (!qpdf_) {
+            return makeNoPdfError();
+        }
+        return val(qpdf_->isEncrypted());
+    }
+
+    /**
      * Write the (modified) PDF to a memory buffer.
+     *
+     * preserveEncryption=true keeps the source document's encryption
+     * (QPDFWriter default); false writes an unencrypted PDF.
      * Returns a typed_memory_view as Uint8Array that remains valid until
      * the next call that modifies outputBuffer_.
      *
@@ -471,17 +534,18 @@ public:
      * pointer remains valid until the caller copies it out (or until the next
      * call that overwrites outputBuffer_).
      */
-    val writePdf() {
+    val writePdf(bool preserveEncryption) {
         if (closed_) {
-            return makeError("Instance has been disposed");
+            return makeDisposedError();
         }
         if (!qpdf_) {
-            return makeError("No PDF loaded");
+            return makeNoPdfError();
         }
 
         try {
             QPDFWriter writer(*qpdf_);
             writer.setOutputMemory();
+            writer.setPreserveEncryption(preserveEncryption);
             // Use default decode level - QPDFWriter handles replaced streams correctly
             writer.write();
 
@@ -494,8 +558,10 @@ public:
             );
 
             return val(typed_memory_view(outputBuffer_.size(), outputBuffer_.data()));
+        } catch (QPDFExc const& e) {
+            return makeError(e.what(), errorKindOf(e));
         } catch (std::exception const& e) {
-            return makeError(e.what());
+            return makeError(e.what(), "unknown");
         }
     }
 
@@ -550,6 +616,7 @@ EMSCRIPTEN_BINDINGS(qpdf_wrapper) {
         .function("getImageStreamData", &QpdfWasmWrapper::getImageStreamData)
         .function("getRawImageStreamData", &QpdfWasmWrapper::getRawImageStreamData)
         .function("replaceImageStream", &QpdfWasmWrapper::replaceImageStream)
+        .function("isEncrypted", &QpdfWasmWrapper::isEncrypted)
         .function("writePdf", &QpdfWasmWrapper::writePdf)
         .function("close", &QpdfWasmWrapper::close)
         .function("getPageCount", &QpdfWasmWrapper::getPageCount);

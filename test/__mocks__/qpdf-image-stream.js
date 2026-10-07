@@ -14,9 +14,11 @@ export const mockWasm = {
     getImageStreamData: null,
     getRawImageStreamData: null,
     replaceImageStream: null,
+    isEncrypted: null,
     writePdf: null,
     close: null,
     getPageCount: null,
+    delete: null,
 };
 
 class MockQpdfWasmWrapper {
@@ -44,8 +46,12 @@ class MockQpdfWasmWrapper {
         if (mockWasm.replaceImageStream) return mockWasm.replaceImageStream(objId, gen, data, metadata);
         return { success: true };
     }
-    writePdf() {
-        if (mockWasm.writePdf) return mockWasm.writePdf();
+    isEncrypted() {
+        if (mockWasm.isEncrypted) return mockWasm.isEncrypted();
+        return false;
+    }
+    writePdf(preserveEncryption) {
+        if (mockWasm.writePdf) return mockWasm.writePdf(preserveEncryption);
         return new Uint8Array(0);
     }
     close() {
@@ -55,10 +61,18 @@ class MockQpdfWasmWrapper {
         if (mockWasm.getPageCount) return mockWasm.getPageCount();
         return 1;
     }
+    delete() {
+        if (mockWasm.delete) return mockWasm.delete();
+    }
 }
 
 export default async function createQpdfModule(_options) {
     return {
         QpdfWasmWrapper: MockQpdfWasmWrapper,
     };
+}
+
+/** Reset all mock functions to their defaults (null). */
+export function resetMockWasm() {
+    for (const key of Object.keys(mockWasm)) mockWasm[key] = null;
 }

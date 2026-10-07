@@ -5,10 +5,34 @@
  */
 
 /**
+ * Machine-readable error category of a failed operation.
+ *
+ * - `PASSWORD_REQUIRED`: `loadPdf` was called on a PDF that needs a password to open
+ * - `INVALID_PASSWORD`: `loadPdfWithPassword` was called with a password that does not open the PDF
+ * - `INVALID_INPUT`: invalid arguments (wrong type, size limit, object IDs, metadata)
+ *   or data that cannot be read as a PDF
+ * - `DISPOSED`: the document was already closed
+ * - `UNKNOWN`: any other failure; see `error` for details
+ *
+ * New codes may be added in minor versions. Handle unknown codes like `UNKNOWN`.
+ */
+export type ErrorCode =
+    | 'PASSWORD_REQUIRED'
+    | 'INVALID_PASSWORD'
+    | 'INVALID_INPUT'
+    | 'DISPOSED'
+    | 'UNKNOWN';
+
+/**
  * Discriminated union representing either a successful result or an error.
  * All operations return this type instead of throwing exceptions.
+ *
+ * On failure, `code` is the stable, machine-readable error category and
+ * `error` a human-readable message (wording may change between versions).
  */
-export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
+export type Result<T> =
+    | { ok: true; value: T }
+    | { ok: false; code: ErrorCode; error: string };
 
 /**
  * Metadata for a single image XObject found in the PDF.
@@ -45,6 +69,18 @@ export interface ImageMetadata {
 }
 
 /**
+ * Options for PdfDocument.writePdf().
+ */
+export interface WriteOptions {
+    /**
+     * Keep the encryption of the source PDF in the output (default: true).
+     * Set to false to write an unencrypted PDF; this requires the document
+     * to have been opened (with the user or owner password if needed).
+     */
+    preserveEncryption?: boolean;
+}
+
+/**
  * Handle to a loaded PDF document. Provides methods for image enumeration,
  * stream reading/replacement, PDF writing, and resource cleanup.
  */
@@ -65,8 +101,16 @@ export interface PdfDocument {
         data: Uint8Array,
         metadata?: Partial<ImageMetadata>
     ): Result<void>;
-    /** Write the (possibly modified) PDF to a new Uint8Array. */
-    writePdf(): Result<Uint8Array>;
+    /**
+     * Whether the loaded (source) PDF is encrypted. Reflects the input
+     * document, not the output of writePdf().
+     */
+    isEncrypted(): Result<boolean>;
+    /**
+     * Write the (possibly modified) PDF to a new Uint8Array.
+     * By default the encryption of the source PDF is preserved.
+     */
+    writePdf(options?: WriteOptions): Result<Uint8Array>;
     /**
      * Release all WASM memory held by this document.
      * After calling close(), all other methods will return an error result.
@@ -80,9 +124,16 @@ export interface PdfDocument {
  * Use loadPdf or loadPdfWithPassword to open a PDF document.
  */
 export interface QpdfImageStreams {
-    /** Load an unprotected PDF from binary data. */
+    /**
+     * Load a PDF from binary data without a password. PDFs that are encrypted
+     * without an open password (owner password only) load as well.
+     * Fails with `PASSWORD_REQUIRED` if a password is needed.
+     */
     loadPdf(data: Uint8Array): Result<PdfDocument>;
-    /** Load a password-protected PDF from binary data. */
+    /**
+     * Load a password-protected PDF with its user or owner password.
+     * Fails with `INVALID_PASSWORD` if the password does not open the PDF.
+     */
     loadPdfWithPassword(data: Uint8Array, password: string): Result<PdfDocument>;
 }
 

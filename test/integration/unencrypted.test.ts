@@ -205,43 +205,48 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
         });
     });
 
-    describe('error results (texts are part of the contract)', () => {
+    describe('error results (codes are the contract; texts unchanged since v0.1.0)', () => {
         it.each([
             ['empty input', new Uint8Array(0)],
             ['random bytes', new Uint8Array([1, 2, 3, 4, 5])],
             ['truncated PDF', loadFixture('multi-image.pdf').slice(0, 400)],
         ])('loadPdf rejects %s', (_label, bytes) => {
-            expect(api.loadPdf(bytes)).toEqual({ ok: false, error: "input.pdf: can't find startxref" });
+            expect(api.loadPdf(bytes)).toEqual({ ok: false, code: 'INVALID_INPUT', error: "input.pdf: can't find startxref" });
         });
 
         it('rejects non-Uint8Array input', () => {
             expect(api.loadPdf([1, 2, 3] as unknown as Uint8Array)).toEqual({
                 ok: false,
+                code: 'INVALID_INPUT',
                 error: 'Input must be a Uint8Array',
             });
             expect(api.loadPdfWithPassword('x' as unknown as Uint8Array, 'pw')).toEqual({
                 ok: false,
+                code: 'INVALID_INPUT',
                 error: 'Input must be a Uint8Array',
             });
         });
 
         it('reports missing and non-stream objects', () => {
             const doc = open('multi-image.pdf');
-            expect(doc.getImageStreamData(99, 0)).toEqual({ ok: false, error: 'Object 99 0 is not a stream' });
-            expect(doc.getRawImageStreamData(99, 0)).toEqual({ ok: false, error: 'Object 99 0 is not a stream' });
-            expect(doc.getImageStreamData(1, 0)).toEqual({ ok: false, error: 'Object 1 0 is not a stream' });
+            expect(doc.getImageStreamData(99, 0)).toEqual({ ok: false, code: 'INVALID_INPUT', error: 'Object 99 0 is not a stream' });
+            expect(doc.getRawImageStreamData(99, 0)).toEqual({ ok: false, code: 'INVALID_INPUT', error: 'Object 99 0 is not a stream' });
+            expect(doc.getImageStreamData(1, 0)).toEqual({ ok: false, code: 'INVALID_INPUT', error: 'Object 1 0 is not a stream' });
             expect(doc.replaceImageStream(99, 0, new Uint8Array(1))).toEqual({
                 ok: false,
+                code: 'INVALID_INPUT',
                 error: 'Object is not a stream',
             });
-            expect(doc.getImageStreamData(-1, 0)).toEqual({ ok: false, error: 'Invalid object ID' });
-            expect(doc.getRawImageStreamData(1, 1.5)).toEqual({ ok: false, error: 'Invalid generation number' });
+            expect(doc.getImageStreamData(-1, 0)).toEqual({ ok: false, code: 'INVALID_INPUT', error: 'Invalid object ID' });
+            expect(doc.getRawImageStreamData(1, 1.5)).toEqual({ ok: false, code: 'INVALID_INPUT', error: 'Invalid generation number' });
             expect(doc.replaceImageStream(7, 0, [1] as unknown as Uint8Array)).toEqual({
                 ok: false,
+                code: 'INVALID_INPUT',
                 error: 'Data must be a Uint8Array',
             });
             expect(doc.replaceImageStream(7, 0, new Uint8Array(1), { width: -1 })).toEqual({
                 ok: false,
+                code: 'INVALID_INPUT',
                 error: 'Invalid metadata: width must not be negative',
             });
             doc.close();
@@ -251,7 +256,7 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             const doc = open('multi-image.pdf');
             doc.close();
             doc.close(); // idempotent
-            const disposed = { ok: false, error: 'Instance has been disposed' };
+            const disposed = { ok: false, code: 'DISPOSED', error: 'Instance has been disposed' };
             expect(doc.getImages()).toEqual(disposed);
             expect(doc.getImageStreamData(7, 0)).toEqual(disposed);
             expect(doc.getRawImageStreamData(7, 0)).toEqual(disposed);
