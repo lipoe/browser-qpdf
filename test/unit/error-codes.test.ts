@@ -153,6 +153,8 @@ describe('Error codes', () => {
 
         it.each([
             ['getImageStreamData', (doc: PdfDocument) => doc.getImageStreamData(-1, 0), 'Invalid object ID'],
+            ['getImageStreamData', (doc: PdfDocument) => doc.getImageStreamData(2 ** 31, 0), 'Invalid object ID'],
+            ['getRawImageStreamData', (doc: PdfDocument) => doc.getRawImageStreamData(1, 2 ** 31), 'Invalid generation number'],
             ['getRawImageStreamData', (doc: PdfDocument) => doc.getRawImageStreamData(1, 0.5), 'Invalid generation number'],
             [
                 'replaceImageStream',
@@ -313,6 +315,7 @@ describe('Argument type validation (INVALID_INPUT, WASM not called)', () => {
         [{ height: 1.5 }, 'Invalid metadata: height must be an integer'],
         [{ bitsPerComponent: NaN }, 'Invalid metadata: bitsPerComponent must be an integer'],
         [{ width: -1 }, 'Invalid metadata: width must not be negative'],
+        [{ height: 2 ** 31 }, 'Invalid metadata: height must not exceed 2147483647'],
         [{ colorSpace: 5 }, 'Invalid metadata: colorSpace must be a string'],
         [{ filter: {} }, 'Invalid metadata: filter must be a string'],
     ])('replaceImageStream metadata %j', (metadata, error) => {

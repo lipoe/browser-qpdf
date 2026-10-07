@@ -102,6 +102,17 @@ const copyBytes = (value: unknown) => new Uint8Array(value as Uint8Array);
 /** Maximum input PDF size: 256 MB */
 const MAX_PDF_SIZE = 256 * 1024 * 1024;
 
+/**
+ * Largest integer the C++ wrapper accepts (32-bit `int`). Larger values would
+ * wrap around in Embind and address a different object or be ignored.
+ */
+const MAX_INT32 = 2 ** 31 - 1;
+
+/** A non-negative integer that the C++ wrapper can represent. */
+function isWrapperInteger(value: unknown): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= MAX_INT32;
+}
+
 function validatePdfInput(data: Uint8Array): Result<never> | undefined {
     if (!(data instanceof Uint8Array)) return invalidInput('Input must be a Uint8Array');
     if (data.byteLength > MAX_PDF_SIZE) return invalidInput('Data exceeds 256 MB limit');
@@ -109,9 +120,8 @@ function validatePdfInput(data: Uint8Array): Result<never> | undefined {
 }
 
 function validateObjectRef(objId: number, generation: number): Result<never> | undefined {
-    if (!Number.isInteger(objId) || objId < 0) return invalidInput('Invalid object ID');
-    if (!Number.isInteger(generation) || generation < 0)
-        return invalidInput('Invalid generation number');
+    if (!isWrapperInteger(objId)) return invalidInput('Invalid object ID');
+    if (!isWrapperInteger(generation)) return invalidInput('Invalid generation number');
     return undefined;
 }
 
@@ -152,6 +162,8 @@ function validateMetadata(metadata?: Partial<ImageMetadata>): Result<never> | un
         if (typeof value !== 'number' || !Number.isInteger(value))
             return invalidInput(`Invalid metadata: ${field} must be an integer`);
         if (value < 0) return invalidInput(`Invalid metadata: ${field} must not be negative`);
+        if (!isWrapperInteger(value))
+            return invalidInput(`Invalid metadata: ${field} must not exceed ${MAX_INT32}`);
     }
     for (const field of NAME_METADATA_FIELDS) {
         const value: unknown = metadata[field];

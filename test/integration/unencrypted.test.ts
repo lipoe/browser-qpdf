@@ -233,6 +233,19 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             expect(doc.replaceImageStream(image.objId, 0, new Uint8Array(1), 'x' as never)).toEqual(
                 invalid('Invalid metadata: must be an object')
             );
+            // 32-bit overflow: 2^32 + objId used to address object objId, and a
+            // width >= 2^31 was silently ignored
+            const wrapped = 2 ** 32 + image.objId;
+            expect(doc.getRawImageStreamData(wrapped, 0)).toEqual(invalid('Invalid object ID'));
+            expect(doc.replaceImageStream(wrapped, 0, new Uint8Array(1))).toEqual(invalid('Invalid object ID'));
+            expect(doc.getImageStreamData(image.objId, 2 ** 31)).toEqual(invalid('Invalid generation number'));
+            expect(doc.replaceImageStream(image.objId, 0, new Uint8Array(1), { width: 2 ** 31 })).toEqual(
+                invalid('Invalid metadata: width must not exceed 2147483647')
+            );
+            // the largest representable value is still accepted and reaches qpdf
+            expect(doc.getImageStreamData(2 ** 31 - 1, 0)).toEqual(
+                invalid('Object 2147483647 0 is not a stream')
+            );
             // the document is unchanged by rejected calls
             expect(imagesOf(doc)).toEqual([image]);
             doc.close();

@@ -34,6 +34,10 @@ typed as `Result<T>` (e.g. test doubles) must add a `code`.
 - Type declarations were missing from the npm package (`dist/types.d.ts`).
 - A failed load (e.g. a wrong password) kept a copy of the whole PDF in WASM
   memory; the wrapper is now freed.
+- Object IDs, generation numbers and metadata integers >= 2^31 overflowed in
+  the 32-bit WASM interface: e.g. object ID 2^32 + 5 read or replaced object 5,
+  and a width >= 2^31 was silently ignored. Such values are now rejected with
+  `INVALID_INPUT`.
 
 ### Known limitations
 - `getImages()` does not report errors while traversing the pages; it returns
