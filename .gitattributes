@@ -1,2 +1,6 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Binary test fixtures must never be line-ending normalized
+*.pdf binary
+*.wasm binary

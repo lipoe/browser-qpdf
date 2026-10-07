@@ -23,9 +23,15 @@
   },
   "scripts": {
     "build": "tsc",
+    "build:wasm": "docker build -t qpdf-wasm-builder . && docker run --rm -v \"$PWD/dist:/out\" qpdf-wasm-builder",
     "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
     "test:pbt": "vitest run test/pbt",
+    "test:browser": "npm run build && playwright test",
+    "test:all": "npm run build && vitest run && playwright test",
     "test:watch": "vitest",
+    "fixtures:encrypted": "node test/fixtures/generate-encrypted-fixtures.mjs",
     "playground": "npx --yes serve ."
   },
   "devDependencies": {

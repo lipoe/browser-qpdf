@@ -103,12 +103,13 @@ describe('Stream Replacement', () => {
             expect(captured.objId).toBe(5);
             expect(captured.gen).toBe(0);
             expect(captured.data).toBe(newData);
+            // Leading slashes are stripped; the C++ wrapper adds the PDF name prefix
             expect(captured.metadata).toEqual({
                 width: 100,
                 height: 200,
                 bitsPerComponent: 8,
-                colorSpace: '/DeviceRGB',
-                filter: '/DCTDecode',
+                colorSpace: 'DeviceRGB',
+                filter: 'DCTDecode',
             });
         });
 
@@ -160,7 +161,7 @@ describe('Stream Replacement', () => {
                 width: 50,
                 height: 0,
                 bitsPerComponent: 0,
-                colorSpace: '/DeviceGray',
+                colorSpace: 'DeviceGray',
                 filter: '',
             });
         });
