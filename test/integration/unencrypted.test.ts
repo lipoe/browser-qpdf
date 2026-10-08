@@ -38,18 +38,27 @@ interface ExpectedImage {
     rawStreamLength: number | null;
 }
 
-/** Deep copy with every `lookup: number[]` turned into a Uint8Array (JSON cannot hold typed arrays). */
-function withLookupBytes(value: unknown): unknown {
-    if (Array.isArray(value)) return value.map(withLookupBytes);
+/**
+ * Deep copy of a JSON-like value where `replace(key, value)` may substitute
+ * any node (return `undefined` to keep walking into it). Uint8Arrays are
+ * leaves. Shared by the manifest conversion and the reference masking below.
+ */
+function deepMap(value: unknown, replace: (key: string | null, value: unknown) => unknown, key: string | null = null): unknown {
+    const replaced = replace(key, value);
+    if (replaced !== undefined) return replaced;
+    if (value instanceof Uint8Array) return value;
+    if (Array.isArray(value)) return value.map((item) => deepMap(item, replace, null));
     if (value && typeof value === 'object') {
-        return Object.fromEntries(
-            Object.entries(value).map(([key, inner]) => [
-                key,
-                key === 'lookup' && Array.isArray(inner) ? Uint8Array.from(inner as number[]) : withLookupBytes(inner),
-            ])
-        );
+        return Object.fromEntries(Object.entries(value).map(([k, inner]) => [k, deepMap(inner, replace, k)]));
     }
     return value;
+}
+
+/** Deep copy with every `lookup: number[]` turned into a Uint8Array (JSON cannot hold typed arrays). */
+function withLookupBytes(value: unknown): unknown {
+    return deepMap(value, (key, node) =>
+        key === 'lookup' && Array.isArray(node) ? Uint8Array.from(node as number[]) : undefined
+    );
 }
 
 /** The ImageInfo an expected manifest entry describes (object location is checked separately). */
@@ -110,14 +119,11 @@ function isObjRef(value: unknown): boolean {
  * between a document and its written copy.
  */
 function maskRefs(value: unknown): unknown {
-    if (typeof value === 'string') return value.replace(/\b\d+ 0 R\b/g, 'N 0 R');
-    if (value instanceof Uint8Array) return value;
-    if (Array.isArray(value)) return value.map(maskRefs);
-    if (isObjRef(value)) return 'REF';
-    if (value && typeof value === 'object') {
-        return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, maskRefs(inner)]));
-    }
-    return value;
+    return deepMap(value, (_key, node) => {
+        if (typeof node === 'string') return node.replace(/\b\d+ 0 R\b/g, 'N 0 R');
+        if (isObjRef(node)) return 'REF';
+        return undefined;
+    });
 }
 
 /**
