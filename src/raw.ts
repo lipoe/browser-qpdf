@@ -15,11 +15,13 @@ export interface RawWrapper {
     getImages(recursive: boolean): unknown;
     getImageStreamData(objId: number, gen: number): unknown;
     getRawImageStreamData(objId: number, gen: number): unknown;
+    readImage(objId: number, gen: number): unknown;
     replaceImageStream(objId: number, gen: number, data: Uint8Array, metadata: unknown): RawStatus;
     isEncrypted(): unknown;
     writePdf(preserveEncryption: boolean): unknown;
     close(): void;
-    getPageCount(): number;
+    getPageCount(): unknown;
+    getPageInfo(index: number): unknown;
     /** Embind: frees the C++ object itself. */
     delete(): void;
 }

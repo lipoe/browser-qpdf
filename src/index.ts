@@ -26,8 +26,10 @@ import type {
     QpdfImageStreams,
     Result,
     PdfDocument,
+    EncodedImage,
     ImageInfo,
     ImageMetadata,
+    PageInfo,
     WriteOptions,
 } from './types.js';
 
@@ -52,6 +54,9 @@ export type {
     ColorSpaceFamily,
     ColorSpaceInfo,
     ImageMaskInfo,
+    ImageEncoding,
+    EncodedImage,
+    PageInfo,
     ImageMetadata,
     PdfDocument,
     QpdfImageStreams,
@@ -127,6 +132,17 @@ function validateObjectRef(objId: number, generation: number): Result<never> | u
     if (!isWrapperInteger(objId)) return invalidInput('Invalid object ID');
     if (!isWrapperInteger(generation)) return invalidInput('Invalid generation number');
     return undefined;
+}
+
+function validatePageIndex(index: number): Result<never> | undefined {
+    if (!isWrapperInteger(index)) return invalidInput('Invalid page index');
+    return undefined;
+}
+
+/** EncodedImage from the raw result: the data view is copied, the encoding facts pass through. */
+function toEncodedImage(value: unknown): EncodedImage {
+    const raw = value as { data: Uint8Array; encoding: EncodedImage['encoding'] };
+    return { data: copyBytes(raw.data), encoding: raw.encoding };
 }
 
 function validatePassword(password: string): Result<never> | undefined {
@@ -275,6 +291,40 @@ export async function createQpdfImageStreams(
                                 () => wrapper.getRawImageStreamData(objId, generation),
                                 copyBytes,
                                 'Failed to get raw stream data'
+                            )
+                    );
+                },
+
+                readImage(objId: number, generation: number): Result<EncodedImage> {
+                    return withDocument(
+                        () =>
+                            validateObjectRef(objId, generation) ??
+                            callRaw(
+                                () => wrapper.readImage(objId, generation),
+                                toEncodedImage,
+                                'Failed to read image'
+                            )
+                    );
+                },
+
+                getPageCount(): Result<number> {
+                    return withDocument(() =>
+                        callRaw(
+                            () => wrapper.getPageCount(),
+                            (value) => value as number,
+                            'Failed to get page count'
+                        )
+                    );
+                },
+
+                getPageInfo(index: number): Result<PageInfo> {
+                    return withDocument(
+                        () =>
+                            validatePageIndex(index) ??
+                            callRaw(
+                                () => wrapper.getPageInfo(index),
+                                (value) => value as PageInfo,
+                                'Failed to get page info'
                             )
                     );
                 },

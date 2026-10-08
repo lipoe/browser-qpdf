@@ -50,6 +50,9 @@ describe('Raw wrapper error kinds (real WASM)', () => {
         ],
         ['isEncrypted', (w: RawWrapper) => w.isEncrypted()],
         ['writePdf', (w: RawWrapper) => w.writePdf(true)],
+        ['readImage', (w: RawWrapper) => w.readImage(1, 0)],
+        ['getPageCount', (w: RawWrapper) => w.getPageCount()],
+        ['getPageInfo', (w: RawWrapper) => w.getPageInfo(0)],
     ])('%s reports only known kinds (disposed and unloaded)', async (_name, call) => {
         for (const prepare of [
             (w: RawWrapper) => w.close(),

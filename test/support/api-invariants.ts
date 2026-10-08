@@ -32,6 +32,12 @@ export const DOCUMENT_OPERATIONS: Record<keyof PdfDocument, Operation<PdfDocumen
         call: (doc, [objId, gen]) => doc.getRawImageStreamData(objId as never, gen as never),
         validArgs: [1, 0],
     },
+    readImage: {
+        call: (doc, [objId, gen]) => doc.readImage(objId as never, gen as never),
+        validArgs: [1, 0],
+    },
+    getPageCount: { call: (doc) => doc.getPageCount(), validArgs: [] },
+    getPageInfo: { call: (doc, [index]) => doc.getPageInfo(index as never), validArgs: [0] },
     replaceImageStream: {
         call: (doc, [objId, gen, data, metadata]) =>
             doc.replaceImageStream(objId as never, gen as never, data as never, metadata as never),

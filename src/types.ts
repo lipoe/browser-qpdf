@@ -138,6 +138,57 @@ export interface ImageInfo {
 }
 
 /**
+ * What the bytes of an EncodedImage are, once the container filters are
+ * removed. Every kind names a public standard. Codec parameters are typed
+ * per kind (ISO 32000-1 §7.4.6, §7.4.7); keys the spec gives a default are
+ * reported with that default.
+ */
+export type ImageEncoding =
+    /** Raw samples; layout described by the ImageInfo (width, height, bitsPerComponent, colorSpaceInfo, decode) */
+    | { kind: 'samples' }
+    /** A complete JPEG file (ITU-T T.81), was /DCTDecode */
+    | { kind: 'jpeg' }
+    /** A JPEG 2000 codestream or JP2 file (ISO 15444), was /JPXDecode */
+    | { kind: 'jpeg2000' }
+    /** Group 3/4 fax data (ITU-T T.4 / T.6), was /CCITTFaxDecode */
+    | {
+          kind: 'ccitt';
+          /** <0: pure 2D (G4), 0: pure 1D, >0: mixed (G3 2D). Default 0 */
+          k: number;
+          /** Default 1728 */
+          columns: number;
+          /** 0: height not predetermined, data ends with EOFB or at the end (spec default 0) */
+          rows: number;
+          blackIs1: boolean;
+          byteAlign: boolean;
+          endOfLine: boolean;
+          endOfBlock: boolean;
+      }
+    /** JBIG2 embedded stream (ITU-T T.88), was /JBIG2Decode */
+    | { kind: 'jbig2'; globals: ObjRef | null };
+
+/** An image in its stored encoding: container compression removed, codec untouched. */
+export interface EncodedImage {
+    data: Uint8Array;
+    encoding: ImageEncoding;
+}
+
+/** Facts of one page. */
+export interface PageInfo {
+    /** 0-based index in page tree order (the argument echoed) */
+    index: number;
+    /**
+     * Inherited /MediaBox, normalised to origin and size in PDF user units
+     * (/Rotate not applied). qpdf repairs a missing or malformed /MediaBox to
+     * Letter (612 x 792) while reading the page tree; the repaired value is
+     * what is reported.
+     */
+    mediaBox: { x: number; y: number; width: number; height: number };
+    /** Inherited /Rotate normalised; 0 when absent (spec default); null when not a multiple of 90 */
+    rotate: 0 | 90 | 180 | 270 | null;
+}
+
+/**
  * Metadata fields for stream replacement. All fields are optional during
  * replacement; omit a field to keep its original value. Provided values are
  * validated, invalid ones fail with `INVALID_INPUT`.
@@ -179,10 +230,26 @@ export interface PdfDocument {
      * the result is then `ok` with the images found up to that point.
      */
     getImages(options?: { recursive?: boolean }): Result<ImageInfo[]>;
-    /** Read decoded (decompressed) stream data for an image. */
+    /**
+     * Read decoded stream data: everything qpdf can decode, including JPEG
+     * via libjpeg; fails for codecs qpdf lacks (JPX, CCITT, JBIG2). Frozen
+     * 0.1.0 route ("samples or error"); prefer readImage().
+     */
     getImageStreamData(objId: number, generation: number): Result<Uint8Array>;
     /** Read raw (compressed/encoded) stream data for an image. */
     getRawImageStreamData(objId: number, generation: number): Result<Uint8Array>;
+    /**
+     * Read an image in its stored encoding: container compression (Flate,
+     * LZW, ...) removed, the image codec left untouched and named in
+     * `encoding`. Works for any stream object, e.g. soft masks and ICC
+     * profiles too. Fails (never returns partially decoded bytes) on damaged
+     * data, unknown filters, or more than one filter after the codec.
+     */
+    readImage(objId: number, generation: number): Result<EncodedImage>;
+    /** Number of pages. */
+    getPageCount(): Result<number>;
+    /** Facts of the page at a 0-based index; `INVALID_INPUT` when out of range. */
+    getPageInfo(index: number): Result<PageInfo>;
     /**
      * Replace image stream content and optionally update metadata.
      * Omitted metadata fields preserve original values.

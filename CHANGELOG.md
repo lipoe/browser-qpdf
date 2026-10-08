@@ -15,6 +15,19 @@ is sorted by object id).
   `softMask`, `mask`, `softMaskOf`, `maskOf`, `softMaskInData`), `pages` and
   `directPages` (0-based page indices). Exported types `ObjRef`,
   `ColorSpaceFamily`, `ColorSpaceInfo`, `ImageMaskInfo`.
+- `PdfDocument.readImage(objId, generation): Result<EncodedImage>`: the
+  image bytes with the container compression (Flate, LZW, RunLength, ASCII)
+  removed and the image codec left untouched; `encoding.kind` names what the
+  bytes are (`samples`, `jpeg`, `jpeg2000`, `ccitt` with its parameters,
+  `jbig2` with its globals reference). Works for any stream object (soft
+  masks, ICC profiles). Unlike `getImageStreamData` it does not fail on
+  JPX, CCITT or JBIG2. Exported types `EncodedImage`, `ImageEncoding`.
+- `PdfDocument.getPageCount(): Result<number>` and
+  `PdfDocument.getPageInfo(index): Result<PageInfo>` (inherited `/MediaBox`
+  as origin and size, `/Rotate` normalised to 0/90/180/270 or `null` when
+  invalid). qpdf repairs a missing or malformed `/MediaBox` to Letter while
+  reading the page tree; the repaired value is reported. Exported type
+  `PageInfo`.
 
 ### Changed
 - `getImages()` lists stencil masks (`/ImageMask true`), which qpdf's

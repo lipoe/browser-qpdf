@@ -33,6 +33,8 @@
 
 #include <emscripten/em_js.h>
 
+#include <algorithm>
+#include <cmath>
 #include <map>
 #include <memory>
 #include <optional>
@@ -128,7 +130,7 @@ static val makeNoPdfError() {
 
 // Runs `body` and converts every C++ exception into an error result. This is
 // the only place where exceptions are classified into error kinds. (getImages
-// and getPageCount additionally swallow traversal errors by design; see there.)
+// additionally degrades to partial facts on traversal errors by design; see there.)
 template <typename Body>
 static val guarded(Body&& body) {
     try {
@@ -179,18 +181,31 @@ static int intOrZero(QPDFObjectHandle const& obj) {
     return obj.isInteger() ? static_cast<int>(obj.getIntValue()) : 0;
 }
 
-// Integer value; JS null when the key is missing; 0 when present but not an
-// integer (0.1.0 contract for /BitsPerComponent).
-static val intOrNull(QPDFObjectHandle const& obj) {
+// Integer value, or JS null when missing or not an integer.
+static val integerOrNull(QPDFObjectHandle const& obj) {
+    return obj.isInteger() ? val(static_cast<int>(obj.getIntValue())) : val::null();
+}
+
+// 0.1.0 contract for /BitsPerComponent only: JS null when the key is
+// missing, but 0 when it is present and not an integer (where integerOrNull
+// would report null). Kept as is because it is a published value; a
+// candidate for 1.0.
+static val legacyIntOrNull(QPDFObjectHandle const& obj) {
     if (obj.isNull()) {
         return val::null();
     }
     return val(intOrZero(obj));
 }
 
-// Integer value, or JS null when missing or not an integer.
-static val integerOrNull(QPDFObjectHandle const& obj) {
-    return obj.isInteger() ? val(static_cast<int>(obj.getIntValue())) : val::null();
+// Integer value, or `fallback` when the key is missing. For keys whose
+// default the spec defines (that default is a fact about the PDF).
+static int integerOr(QPDFObjectHandle const& obj, int fallback) {
+    return obj.isInteger() ? static_cast<int>(obj.getIntValue()) : fallback;
+}
+
+// Boolean value, or `fallback` when the key is missing (spec default).
+static bool boolOr(QPDFObjectHandle const& obj, bool fallback) {
+    return obj.isBool() ? obj.getBoolValue() : fallback;
 }
 
 // Name with its leading slash; any other value as qpdf serialises it (PDF
@@ -316,8 +331,10 @@ static val unknownColorSpace(std::string const& raw) {
 
 static val colorSpaceInfo(QPDFObjectHandle cs, int depth) {
     std::string raw = cs.unparseResolved();
+    // Valid nesting is at most three levels (Indexed over Separation over its
+    // alternate); the bound only stops reference cycles in damaged files.
     if (depth > 8) {
-        return unknownColorSpace(raw);  // Indexed/Separation nesting is bounded in valid PDFs
+        return unknownColorSpace(raw);
     }
 
     if (cs.isName()) {
@@ -359,8 +376,14 @@ static val colorSpaceInfo(QPDFObjectHandle cs, int depth) {
         if (lookup.isString()) {
             table = lookup.getStringValue();
         } else if (lookup.isStream()) {
-            auto buf = lookup.getStreamData(qpdf_dl_all);
-            table.assign(reinterpret_cast<char const*>(buf->getBuffer()), buf->getSize());
+            // The only decode inside the catalog; a damaged lookup stream
+            // degrades this colour space to Unknown instead of failing getImages.
+            try {
+                auto buf = lookup.getStreamData(qpdf_dl_all);
+                table.assign(reinterpret_cast<char const*>(buf->getBuffer()), buf->getSize());
+            } catch (std::exception const&) {
+                return unknownColorSpace(raw);
+            }
         } else {
             return unknownColorSpace(raw);
         }
@@ -429,7 +452,7 @@ static val readImageDictionaryFacts(QPDFObjectHandle& image) {
     info.set("generation", image.getGeneration());
     info.set("width", intOrZero(dict.getKey("/Width")));
     info.set("height", intOrZero(dict.getKey("/Height")));
-    info.set("bitsPerComponent", intOrNull(dict.getKey("/BitsPerComponent")));
+    info.set("bitsPerComponent", legacyIntOrNull(dict.getKey("/BitsPerComponent")));
     info.set("colorSpace", nameOrUnparse(dict.getKey("/ColorSpace")));
     info.set("filter", nameOrUnparse(dict.getKey("/Filter")));
     // Encoded (raw) byte length as declared in the dictionary
@@ -521,6 +544,137 @@ static bool isImageOrStencilMask(QPDFObjectHandle obj) {
     return obj.isImage(false);
 }
 
+// --- Encoded image: container filters removed, codec reported ---
+
+// The image codecs of ISO 32000-1 table 6. Everything before the first of
+// them in a filter chain is container compression that qpdf removes; the
+// codec itself is reported, never decoded here. This is the only codec
+// knowledge in the wrapper and it is spec content, not qpdf's ability.
+static bool isSpecImageCodec(std::string const& name) {
+    return name == "DCTDecode" || name == "JPXDecode" || name == "CCITTFaxDecode" || name == "JBIG2Decode";
+}
+
+// Index of the first image codec in `names`, or names.size() if none.
+static size_t codecCut(std::vector<std::string> const& names) {
+    for (size_t i = 0; i < names.size(); ++i) {
+        if (isSpecImageCodec(names[i])) return i;
+    }
+    return names.size();
+}
+
+// Copy of `obj` that belongs to `target`: direct values are rebuilt
+// recursively, indirect objects are copied with QPDF::copyForeignObject.
+// qpdf refuses to attach a handle owned by one document to another, so
+// anything that goes into the scratch document passes through here.
+static QPDFObjectHandle copyInto(QPDF& target, QPDFObjectHandle const& obj) {
+    if (obj.isIndirect()) return target.copyForeignObject(obj);
+    if (obj.isArray()) {
+        QPDFObjectHandle copy = QPDFObjectHandle::newArray();
+        for (int i = 0; i < obj.getArrayNItems(); ++i) copy.appendItem(copyInto(target, obj.getArrayItem(i)));
+        return copy;
+    }
+    if (obj.isDictionary()) {
+        QPDFObjectHandle copy = QPDFObjectHandle::newDictionary();
+        for (auto const& key : obj.getKeys()) copy.replaceKey(key, copyInto(target, obj.getKey(key)));
+        return copy;
+    }
+    if (obj.isName()) return QPDFObjectHandle::newName(obj.getName());
+    if (obj.isInteger()) return QPDFObjectHandle::newInteger(obj.getIntValue());
+    if (obj.isReal()) return QPDFObjectHandle::newReal(obj.getRealValue());
+    if (obj.isBool()) return QPDFObjectHandle::newBool(obj.getBoolValue());
+    if (obj.isString()) return QPDFObjectHandle::newString(obj.getStringValue());
+    return QPDFObjectHandle::newNull();
+}
+
+// The first `count` entries of /Filter as written (abbreviations intact, qpdf
+// expands them itself), owned by `target`: a name for a single filter, an
+// array otherwise, null for none.
+static QPDFObjectHandle filterPrefix(QPDF& target, QPDFObjectHandle const& filter, size_t count) {
+    if (count == 0) return QPDFObjectHandle::newNull();
+    if (filter.isName()) return copyInto(target, filter);
+    QPDFObjectHandle prefix = QPDFObjectHandle::newArray();
+    for (size_t i = 0; i < count && static_cast<int>(i) < filter.getArrayNItems(); ++i) {
+        prefix.appendItem(copyInto(target, filter.getArrayItem(static_cast<int>(i))));
+    }
+    return prefix;
+}
+
+// /DecodeParms for the first `count` filters, owned by `target`: sliced when
+// it is an array, kept when it is one dictionary for one filter, otherwise
+// passed through for qpdf to judge.
+static QPDFObjectHandle decodeParmsPrefix(QPDF& target, QPDFObjectHandle const& parms, size_t count) {
+    if (count == 0 || parms.isNull()) return QPDFObjectHandle::newNull();
+    if (!parms.isArray()) return copyInto(target, parms);
+    QPDFObjectHandle prefix = QPDFObjectHandle::newArray();
+    for (size_t i = 0; i < count && static_cast<int>(i) < parms.getArrayNItems(); ++i) {
+        prefix.appendItem(copyInto(target, parms.getArrayItem(static_cast<int>(i))));
+    }
+    return prefix;
+}
+
+// /DecodeParms entry belonging to the filter at `index` (array: that item;
+// single dictionary: only for a single-filter chain), or null.
+static QPDFObjectHandle decodeParmsAt(QPDFObjectHandle const& parms, size_t index, size_t chainLength) {
+    if (parms.isArray()) {
+        return static_cast<int>(index) < parms.getArrayNItems()
+            ? parms.getArrayItem(static_cast<int>(index)) : QPDFObjectHandle::newNull();
+    }
+    if (parms.isDictionary() && chainLength == 1) return parms;
+    return QPDFObjectHandle::newNull();
+}
+
+// ImageEncoding: what the bytes are after the container filters are gone.
+// Codec parameters are typed per codec (ISO 32000-1 §7.4.6, §7.4.7); keys
+// the spec gives a default are reported with that default.
+static val encodingOf(std::string const& residual, QPDFObjectHandle const& parms) {
+    val encoding = val::object();
+    if (residual.empty()) {
+        encoding.set("kind", val("samples"));
+    } else if (residual == "DCTDecode") {
+        encoding.set("kind", val("jpeg"));
+    } else if (residual == "JPXDecode") {
+        encoding.set("kind", val("jpeg2000"));
+    } else if (residual == "CCITTFaxDecode") {
+        QPDFObjectHandle p = parms.isDictionary() ? parms : QPDFObjectHandle::newDictionary();
+        encoding.set("kind", val("ccitt"));
+        encoding.set("k", integerOr(p.getKey("/K"), 0));
+        encoding.set("columns", integerOr(p.getKey("/Columns"), 1728));
+        encoding.set("rows", integerOr(p.getKey("/Rows"), 0));  // 0: height not predetermined (spec)
+        encoding.set("blackIs1", boolOr(p.getKey("/BlackIs1"), false));
+        encoding.set("byteAlign", boolOr(p.getKey("/EncodedByteAlign"), false));
+        encoding.set("endOfLine", boolOr(p.getKey("/EndOfLine"), false));
+        encoding.set("endOfBlock", boolOr(p.getKey("/EndOfBlock"), true));
+    } else {  // JBIG2Decode
+        QPDFObjectHandle p = parms.isDictionary() ? parms : QPDFObjectHandle::newDictionary();
+        encoding.set("kind", val("jbig2"));
+        encoding.set("globals", streamRefOrNull(p.getKey("/JBIG2Globals")));
+    }
+    return encoding;
+}
+
+// --- Page facts ---
+
+// /Rotate normalised to 0 | 90 | 180 | 270; missing -> 0 (spec default);
+// not an integer multiple of 90 -> JS null (invalid, not mapped to 0).
+static val rotateFact(QPDFObjectHandle const& rotate) {
+    if (rotate.isNull()) return val(0);
+    if (!rotate.isInteger()) return val::null();
+    long long n = ((rotate.getIntValue() % 360) + 360) % 360;
+    return n % 90 == 0 ? val(static_cast<int>(n)) : val::null();
+}
+
+// {x, y, width, height} of a rectangle array given in any corner order.
+static val rectangleFact(QPDFObjectHandle const& box) {
+    double x0 = box.getArrayItem(0).getNumericValue(), y0 = box.getArrayItem(1).getNumericValue();
+    double x1 = box.getArrayItem(2).getNumericValue(), y1 = box.getArrayItem(3).getNumericValue();
+    val rect = val::object();
+    rect.set("x", std::min(x0, x1));
+    rect.set("y", std::min(y0, y1));
+    rect.set("width", std::abs(x1 - x0));
+    rect.set("height", std::abs(y1 - y0));
+    return rect;
+}
+
 // --- Main wrapper class ---
 
 class QpdfWasmWrapper {
@@ -577,7 +731,9 @@ public:
                         pages[p].forEachXObject(
                             false,
                             [&catalog, pageIndex](QPDFObjectHandle& image, QPDFObjectHandle&, std::string const&) {
-                                catalog[image.getObjGen()].directPages.insert(pageIndex);
+                                CatalogEntry& entry = catalog[image.getObjGen()];
+                                entry.image = image;
+                                entry.directPages.insert(pageIndex);
                             },
                             isImageOrStencilMask);
                     }
@@ -618,6 +774,54 @@ public:
      */
     val getRawImageStreamData(int objId, int generation) {
         return readStream(objId, generation, false);
+    }
+
+    /**
+     * Read an image in its stored encoding: every filter before the first
+     * image codec (container compression) is removed, the codec is left
+     * untouched and reported.
+     * Returns {data: typed_memory_view, encoding: ImageEncoding}.
+     *
+     * qpdf treats a filter chain as all-or-nothing, so a chain with a codec
+     * is re-created without the codec in a scratch document and decoded
+     * there; the loaded document is not modified. More than one filter after
+     * the codec, an unknown filter, or damaged data fail with an error;
+     * partially decoded bytes are never returned.
+     */
+    val readImage(int objId, int generation) {
+        return withDocument([&]() {
+            QPDFObjectHandle obj = qpdf_->getObjectByID(objId, generation);
+            if (!obj.isStream()) {
+                return makeError(notAStream(objId, generation), "invalid_argument");
+            }
+            QPDFObjectHandle dict = obj.getDict();
+            std::vector<std::string> names = filterNames(dict);
+            size_t cut = codecCut(names);
+            if (names.size() - cut > 1) {
+                return makeError("unsupported filter chain: " + dict.getKey("/Filter").unparse(), "unknown");
+            }
+
+            std::shared_ptr<Buffer> buf;
+            if (cut == names.size()) {
+                buf = obj.getStreamData(qpdf_dl_generalized);  // no codec: qpdf removes the container filters
+            } else {
+                QPDF scratch;
+                scratch.emptyPDF();
+                QPDFObjectHandle reduced = scratch.newStream();
+                reduced.replaceStreamData(
+                    obj.getRawStreamData(),  // decrypted, undecoded
+                    filterPrefix(scratch, dict.getKey("/Filter"), cut),
+                    decodeParmsPrefix(scratch, dict.getKey("/DecodeParms"), cut));
+                buf = reduced.getStreamData(qpdf_dl_generalized);
+            }
+            outputBuffer_.assign(buf->getBuffer(), buf->getBuffer() + buf->getSize());
+
+            std::string residual = cut < names.size() ? names[cut] : "";
+            val result = val::object();
+            result.set("data", val(typed_memory_view(outputBuffer_.size(), outputBuffer_.data())));
+            result.set("encoding", encodingOf(residual, decodeParmsAt(dict.getKey("/DecodeParms"), cut, names.size())));
+            return result;
+        });
     }
 
     /**
@@ -784,19 +988,48 @@ public:
     }
 
     /**
-     * Get the number of pages in the loaded PDF.
+     * Number of pages in the loaded PDF, or an error object (disposed, not
+     * loaded, unreadable page tree).
      */
-    int getPageCount() {
-        if (closed_ || !qpdf_) return 0;
-        try {
-            return static_cast<int>(
-                QPDFPageDocumentHelper(*qpdf_).getAllPages().size());
-        } catch (std::exception const&) {
-            return 0;
-        }
+    val getPageCount() {
+        return withDocument([&]() {
+            return val(static_cast<int>(QPDFPageDocumentHelper(*qpdf_).getAllPages().size()));
+        });
+    }
+
+    /**
+     * Facts of one page: {index, mediaBox: {x, y, width, height}, rotate}.
+     * /MediaBox and /Rotate are inherited through the page tree. qpdf repairs
+     * a missing or malformed /MediaBox to Letter while reading the page tree
+     * (with a warning); the repaired value is what is reported.
+     */
+    val getPageInfo(int index) {
+        return withDocument([&]() {
+            auto pages = QPDFPageDocumentHelper(*qpdf_).getAllPages();
+            if (index < 0 || static_cast<size_t>(index) >= pages.size()) {
+                return makeError("Page index " + std::to_string(index) + " out of range (0 to " +
+                                     std::to_string(pages.size()) + " exclusive)",
+                                 "invalid_argument");
+            }
+            QPDFPageObjectHelper& page = pages[static_cast<size_t>(index)];
+            QPDFObjectHandle mediaBox = page.getMediaBox(false);
+            if (!mediaBox.isRectangle()) {
+                // Unreachable after qpdf's repair; reported rather than invented
+                return makeError("Page " + std::to_string(index) + ": /MediaBox is not a rectangle", "unknown");
+            }
+            val info = val::object();
+            info.set("index", index);
+            info.set("mediaBox", rectangleFact(mediaBox));
+            info.set("rotate", rotateFact(page.getAttribute("/Rotate", false)));
+            return info;
+        });
     }
 
 private:
+    static std::string notAStream(int objId, int generation) {
+        return "Object " + std::to_string(objId) + " " + std::to_string(generation) + " is not a stream";
+    }
+
     // Runs `body` on the loaded document: rejects disposed/unloaded instances
     // and converts exceptions via guarded().
     template <typename Body>
@@ -840,9 +1073,7 @@ private:
         return withDocument([&]() {
             QPDFObjectHandle obj = qpdf_->getObjectByID(objId, generation);
             if (!obj.isStream()) {
-                return makeError(
-                    "Object " + std::to_string(objId) + " " + std::to_string(generation) + " is not a stream",
-                    "invalid_argument");
+                return makeError(notAStream(objId, generation), "invalid_argument");
             }
 
             std::shared_ptr<Buffer> buf =
@@ -877,6 +1108,8 @@ EMSCRIPTEN_BINDINGS(qpdf_wrapper) {
         .function("replaceImageStream", &QpdfWasmWrapper::replaceImageStream)
         .function("isEncrypted", &QpdfWasmWrapper::isEncrypted)
         .function("writePdf", &QpdfWasmWrapper::writePdf)
+        .function("readImage", &QpdfWasmWrapper::readImage)
         .function("close", &QpdfWasmWrapper::close)
-        .function("getPageCount", &QpdfWasmWrapper::getPageCount);
+        .function("getPageCount", &QpdfWasmWrapper::getPageCount)
+        .function("getPageInfo", &QpdfWasmWrapper::getPageInfo);
 }

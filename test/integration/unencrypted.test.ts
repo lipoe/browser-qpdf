@@ -36,6 +36,16 @@ interface ExpectedImage {
     /** null: getImageStreamData() fails for this image (see manifest "conventions") */
     decodedStreamLength: number | null;
     rawStreamLength: number | null;
+    /** readImage(): encoding facts, or null when the call fails for this image */
+    encoding: unknown;
+    /** readImage(): data byte length after container filters are removed */
+    encodedLength: number | null;
+}
+
+interface ExpectedPage {
+    index: number;
+    mediaBox: { x: number; y: number; width: number; height: number };
+    rotate: number | null;
 }
 
 /**
@@ -86,6 +96,7 @@ interface FixtureManifest {
         string,
         {
             pageCount: number;
+            pageInfos: ExpectedPage[];
             expectedImages: ExpectedImage[] | { recursive_false: ExpectedImage[]; recursive_true: ExpectedImage[] };
         }
     >;
@@ -197,12 +208,47 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             doc.close();
         });
 
+        it('readImage() returns the bytes in their stored encoding and names the encoding (or fails, never returning partial bytes)', () => {
+            const doc = open(name);
+            const expected = expectedImagesOf(name, true);
+            imagesOf(doc, true).forEach((info, i) => {
+                const read = doc.readImage(info.objId, info.generation);
+                if (expected[i].encoding === null) {
+                    expect(read).toMatchObject({ ok: false, code: 'UNKNOWN' });
+                    return;
+                }
+                const image = unwrap(read);
+                expect(image.encoding).toEqual(expected[i].encoding);
+                expect(image.data.byteLength).toBe(expected[i].encodedLength);
+                if (image.encoding.kind === 'jpeg') expect([image.data[0], image.data[1]]).toEqual([0xff, 0xd8]);
+                if (image.encoding.kind === 'samples') {
+                    // samples are what the frozen route decodes to as well
+                    expect(image.data).toEqual(unwrap(doc.getImageStreamData(info.objId, info.generation)));
+                }
+            });
+            doc.close();
+        });
+
+        it('getPageCount() and getPageInfo() match the manifest; the index is validated', () => {
+            const doc = open(name);
+            const { pageCount: count, pageInfos } = manifest.fixtures[name];
+            expect(doc.getPageCount()).toEqual({ ok: true, value: count });
+            pageInfos.forEach((page, i) => expect(doc.getPageInfo(i)).toEqual({ ok: true, value: page }));
+            expect(doc.getPageInfo(count)).toMatchObject({ ok: false, code: 'INVALID_INPUT' });
+            expect(doc.getPageInfo(-1)).toEqual({ ok: false, code: 'INVALID_INPUT', error: 'Invalid page index' });
+            expect(doc.getPageInfo(1.5)).toEqual({ ok: false, code: 'INVALID_INPUT', error: 'Invalid page index' });
+            doc.close();
+        });
+
         it('writePdf() keeps pages, image order and pixel data; output is unencrypted', async () => {
             const doc = open(name);
             const before = imagesOf(doc, true).map((info) => ({
                 info,
                 decoded: decodedOrNull(doc, info),
             }));
+            // readImage() works in a scratch document; it must leave no trace in what is written
+            before.forEach(({ info }) => doc.readImage(info.objId, info.generation));
+            expect(imagesOf(doc, true)).toEqual(before.map((b) => b.info));
             const written = unwrap(doc.writePdf());
             doc.close();
 
@@ -378,6 +424,7 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             const doc = open('multi-image.pdf');
             expect(doc.getImageStreamData(99, 0)).toEqual({ ok: false, code: 'INVALID_INPUT', error: 'Object 99 0 is not a stream' });
             expect(doc.getRawImageStreamData(99, 0)).toEqual({ ok: false, code: 'INVALID_INPUT', error: 'Object 99 0 is not a stream' });
+            expect(doc.readImage(99, 0)).toEqual({ ok: false, code: 'INVALID_INPUT', error: 'Object 99 0 is not a stream' });
             expect(doc.getImageStreamData(1, 0)).toEqual({ ok: false, code: 'INVALID_INPUT', error: 'Object 1 0 is not a stream' });
             expect(doc.replaceImageStream(99, 0, new Uint8Array(1))).toEqual({
                 ok: false,
@@ -407,6 +454,9 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             expect(doc.getImages()).toEqual(disposed);
             expect(doc.getImageStreamData(7, 0)).toEqual(disposed);
             expect(doc.getRawImageStreamData(7, 0)).toEqual(disposed);
+            expect(doc.readImage(7, 0)).toEqual(disposed);
+            expect(doc.getPageCount()).toEqual(disposed);
+            expect(doc.getPageInfo(0)).toEqual(disposed);
             expect(doc.replaceImageStream(7, 0, new Uint8Array(1))).toEqual(disposed);
             expect(doc.writePdf()).toEqual(disposed);
         });

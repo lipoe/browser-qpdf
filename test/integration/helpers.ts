@@ -55,12 +55,14 @@ export async function withRawWrapper<T>(use: (wrapper: RawWrapper) => T): Promis
     }
 }
 
-/** Page count of a PDF, read via the raw wrapper (not part of the public API). */
+/** Page count of a PDF, read via the raw wrapper (independent of the TypeScript layer). */
 export function pageCount(bytes: Uint8Array, password?: string): Promise<number> {
     return withRawWrapper((wrapper) => {
         const loaded =
             password === undefined ? wrapper.loadPdf(bytes) : wrapper.loadPdfWithPassword(bytes, password);
         if (!loaded.success) throw new Error(`raw load failed: ${loaded.error ?? ''}`);
-        return wrapper.getPageCount();
+        const count = wrapper.getPageCount();
+        if (typeof count !== 'number') throw new Error(`raw getPageCount failed: ${JSON.stringify(count)}`);
+        return count;
     });
 }
