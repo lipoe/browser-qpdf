@@ -22,7 +22,8 @@ interface ExpectedImage {
     bitsPerComponent: number | null;
     colorSpace: string | null;
     filter: string | null;
-    decodedStreamLength: number;
+    /** null: getImageStreamData() fails for this image (see manifest "conventions") */
+    decodedStreamLength: number | null;
     rawStreamLength: number | null;
 }
 
@@ -46,18 +47,31 @@ function expectedImagesOf(name: string, recursive: boolean): ExpectedImage[] {
 }
 
 
-/** Image metadata without object location and encoded length (both change when writing). */
+/**
+ * Image metadata without object location and encoded length (both change
+ * when writing). Indirect references inside the colorSpace string (e.g.
+ * "7 0 R", "[ /ICCBased 9 0 R ]") are renumbered by QPDFWriter as well, so
+ * their object numbers are masked.
+ */
 function withoutLocation(info: ImageInfo) {
     const { objId: _objId, generation: _generation, streamLength: _streamLength, ...shape } = info;
-    return shape;
+    return { ...shape, colorSpace: shape.colorSpace?.replace(/\b\d+ 0 R\b/g, 'N 0 R') ?? null };
 }
 
 /**
  * Expected metadata after writePdf(): QPDFWriter renumbers objects and
  * compresses previously unfiltered streams with FlateDecode (qpdf default).
+ * Filtered streams keep their /Filter as written, including the abbreviation
+ * /Fl and chains with image codecs.
  */
 function writtenShape(info: ImageInfo) {
     return { ...withoutLocation(info), filter: info.filter ?? '/FlateDecode' };
+}
+
+/** Decoded stream data, or null when qpdf cannot decode the chain (the manifest records which). */
+function decodedOrNull(doc: PdfDocument, info: ImageInfo): Uint8Array | null {
+    const result = doc.getImageStreamData(info.objId, info.generation);
+    return result.ok ? result.value : null;
 }
 
 function imagesOf(doc: PdfDocument, recursive = false): ImageInfo[] {
@@ -103,13 +117,17 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             doc.close();
         });
 
-        it('returns decoded and raw stream data with the expected lengths', () => {
+        it('returns decoded and raw stream data with the expected lengths (or fails to decode, never returning undecoded bytes)', () => {
             const doc = open(name);
             const expected = expectedImagesOf(name, true);
             imagesOf(doc, true).forEach((info, i) => {
-                const decoded = unwrap(doc.getImageStreamData(info.objId, info.generation));
+                const decoded = doc.getImageStreamData(info.objId, info.generation);
                 const raw = unwrap(doc.getRawImageStreamData(info.objId, info.generation));
-                expect(decoded.byteLength).toBe(expected[i].decodedStreamLength);
+                if (expected[i].decodedStreamLength === null) {
+                    expect(decoded).toMatchObject({ ok: false, code: 'UNKNOWN' });
+                } else {
+                    expect(unwrap(decoded).byteLength).toBe(expected[i].decodedStreamLength);
+                }
                 expect(raw.byteLength).toBe(expected[i].rawStreamLength ?? info.streamLength);
             });
             doc.close();
@@ -119,7 +137,7 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             const doc = open(name);
             const before = imagesOf(doc, true).map((info) => ({
                 info,
-                decoded: unwrap(doc.getImageStreamData(info.objId, info.generation)),
+                decoded: decodedOrNull(doc, info),
             }));
             const written = unwrap(doc.writePdf());
             doc.close();
@@ -130,9 +148,7 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             const reloaded = unwrap(api.loadPdf(written));
             const after = imagesOf(reloaded, true);
             expect(after.map(withoutLocation)).toEqual(before.map((b) => writtenShape(b.info)));
-            after.forEach((info, i) =>
-                expect(unwrap(reloaded.getImageStreamData(info.objId, info.generation))).toEqual(before[i].decoded)
-            );
+            after.forEach((info, i) => expect(decodedOrNull(reloaded, info)).toEqual(before[i].decoded));
             reloaded.close();
         });
     });

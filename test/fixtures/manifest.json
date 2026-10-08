@@ -1,5 +1,9 @@
 {
-  "description": "Test fixture manifest documenting expected properties for each PDF file. Used by unit and property-based tests to verify correct behavior.",
+  "description": "Test fixture manifest documenting expected properties for each PDF file. Used by unit and property-based tests to verify correct behavior. Every entry describes what the current binary returns; a deliberate behaviour change shows up as a diff of this file.",
+  "conventions": {
+    "decodedStreamLength": "byte length of getImageStreamData(); null means the call fails (qpdf cannot decode the filter chain) and never returns undecoded bytes",
+    "rawStreamLength": "byte length of getRawImageStreamData(); null when it depends on the zlib implementation (Flate-encoded payloads)"
+  },
   "fixtures": {
     "simple-one-image.pdf": {
       "description": "Single uncompressed 2x2 RGB image on one page",
@@ -119,6 +123,158 @@
         "recursive_true": 2
       },
       "requirements": ["3.4", "3.5"]
+    },
+
+    "smask-pair.pdf": {
+      "description": "2x2 RGB picture (obj 5) whose /SMask points at a 2x2 gray image (obj 6); both are page resources.",
+      "pageCount": 1,
+      "expectedImages": [
+        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "/DeviceRGB", "filter": null, "decodedStreamLength": 12, "rawStreamLength": 12 },
+        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "/DeviceGray", "filter": null, "decodedStreamLength": 4, "rawStreamLength": 4 }
+      ],
+      "totalImageCount": 2,
+      "facts": ["masks.softMask", "masks.softMaskOf"]
+    },
+    "stencil-mask-pair.pdf": {
+      "description": "2x2 RGB picture (obj 5) with a stencil /Mask stream (obj 6, /ImageMask true); both are page resources. The stencil mask is not listed by the current binary (qpdf's forEachImage excludes /ImageMask streams).",
+      "pageCount": 1,
+      "expectedImages": [
+        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "/DeviceRGB", "filter": null, "decodedStreamLength": 12, "rawStreamLength": 12 }
+      ],
+      "totalImageCount": 1,
+      "facts": ["masks.mask (stencil)", "masks.maskOf", "masks.isStencilMask"]
+    },
+    "colorkey-mask.pdf": {
+      "description": "2x2 RGB picture with a colour-key /Mask array.",
+      "pageCount": 1,
+      "expectedImages": [
+        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "/DeviceRGB", "filter": null, "decodedStreamLength": 12, "rawStreamLength": 12 }
+      ],
+      "totalImageCount": 1,
+      "facts": ["masks.mask (colorKey)"]
+    },
+    "imagemask-decode.pdf": {
+      "description": "A single 8x2 stencil mask (/ImageMask true, 1 bpc, /Decode [1 0]). Not listed by the current binary (qpdf's forEachImage excludes /ImageMask streams).",
+      "pageCount": 1,
+      "expectedImages": [],
+      "totalImageCount": 0,
+      "facts": ["masks.isStencilMask", "decode", "colorSpaceInfo null"]
+    },
+    "iccbased-n3-n1.pdf": {
+      "description": "Im1: /ColorSpace is an indirect reference to [ /ICCBased 8 0 R ] with /N 3. Im2: direct array [ /ICCBased 9 0 R ] with /N 1.",
+      "pageCount": 1,
+      "expectedImages": [
+        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "7 0 R", "filter": null, "decodedStreamLength": 12, "rawStreamLength": 12 },
+        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "[ /ICCBased 9 0 R ]", "filter": null, "decodedStreamLength": 4, "rawStreamLength": 4 }
+      ],
+      "totalImageCount": 2,
+      "facts": ["colorSpaceInfo ICCBased", "colorSpaceInfo.iccProfile", "indirect /ColorSpace"]
+    },
+    "indexed-rgb.pdf": {
+      "description": "Im1: Indexed over DeviceRGB, 8 bpc, hival 3, lookup as hex string. Im2: Indexed over DeviceRGB, 4 bpc, hival 1, lookup as Flate stream (obj 7).",
+      "pageCount": 1,
+      "expectedImages": [
+        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "[ /Indexed /DeviceRGB 3 <ff000000ff000000ffffff00> ]", "filter": null, "decodedStreamLength": 4, "rawStreamLength": 4 },
+        { "width": 2, "height": 2, "bitsPerComponent": 4, "colorSpace": "[ /Indexed /DeviceRGB 1 7 0 R ]", "filter": null, "decodedStreamLength": 2, "rawStreamLength": 2 }
+      ],
+      "totalImageCount": 2,
+      "facts": ["colorSpaceInfo Indexed", "indexed.hival", "indexed.lookup"]
+    },
+    "separation-devicen.pdf": {
+      "description": "Im1: Separation /Spot over DeviceCMYK with a type 2 tint transform. Im2: DeviceN [ /Cyan /Magenta ] over DeviceCMYK with a type 4 tint transform.",
+      "pageCount": 1,
+      "expectedImages": [
+        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "[ /Separation /Spot /DeviceCMYK 7 0 R ]", "filter": null, "decodedStreamLength": 4, "rawStreamLength": 4 },
+        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "[ /DeviceN [ /Cyan /Magenta ] /DeviceCMYK 8 0 R ]", "filter": null, "decodedStreamLength": 8, "rawStreamLength": 8 }
+      ],
+      "totalImageCount": 2,
+      "facts": ["colorSpaceInfo Separation", "colorSpaceInfo DeviceN", "names", "alternate"]
+    },
+    "dct-indirect-colorspace.pdf": {
+      "description": "2x2 gray JPEG whose /ColorSpace is an indirect reference (obj 6) to [ /ICCBased 7 0 R ], /N 1: the \"940 0 R\" case from the handoff.",
+      "pageCount": 1,
+      "expectedImages": [
+        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "6 0 R", "filter": "/DCTDecode", "decodedStreamLength": 4, "rawStreamLength": 337 }
+      ],
+      "totalImageCount": 1,
+      "facts": ["colorSpaceInfo resolves indirect reference", "readImage jpeg"]
+    },
+    "flate-dct-chain.pdf": {
+      "description": "2x2 gray JPEG wrapped in Flate: /Filter [ /FlateDecode /DCTDecode ]. qpdf decodes the whole chain (libjpeg) to 4 samples.",
+      "pageCount": 1,
+      "expectedImages": [
+        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "/DeviceGray", "filter": "[ /FlateDecode /DCTDecode ]", "decodedStreamLength": 4, "rawStreamLength": null }
+      ],
+      "totalImageCount": 1,
+      "facts": ["filters", "readImage jpeg after container removal"]
+    },
+    "jpx-flate-chain.pdf": {
+      "description": "JPX payload wrapped in Flate, /SMaskInData 1, no /ColorSpace and no /BitsPerComponent (allowed for JPX). qpdf cannot decode JPX, so getImageStreamData fails for the whole chain; the payload bytes are opaque placeholders.",
+      "pageCount": 1,
+      "expectedImages": [
+        { "width": 2, "height": 2, "bitsPerComponent": null, "colorSpace": null, "filter": "[ /FlateDecode /JPXDecode ]", "decodedStreamLength": null, "rawStreamLength": null }
+      ],
+      "totalImageCount": 1,
+      "facts": ["filters", "readImage jpeg2000", "masks.softMaskInData", "getImageStreamData: samples or error"]
+    },
+    "ccitt-1bit.pdf": {
+      "description": "8x2 1-bpc gray image, /Filter /CCITTFaxDecode with /DecodeParms << /K -1 /Columns 8 /BlackIs1 true >>. Opaque placeholder payload; qpdf cannot decode CCITT.",
+      "pageCount": 1,
+      "expectedImages": [
+        { "width": 8, "height": 2, "bitsPerComponent": 1, "colorSpace": "/DeviceGray", "filter": "/CCITTFaxDecode", "decodedStreamLength": null, "rawStreamLength": 4 }
+      ],
+      "totalImageCount": 1,
+      "facts": ["readImage ccitt with typed parameters"]
+    },
+    "jbig2-globals.pdf": {
+      "description": "8x2 1-bpc gray image, /Filter /JBIG2Decode with /DecodeParms << /JBIG2Globals 6 0 R >>. Opaque placeholder payloads; qpdf cannot decode JBIG2.",
+      "pageCount": 1,
+      "expectedImages": [
+        { "width": 8, "height": 2, "bitsPerComponent": 1, "colorSpace": "/DeviceGray", "filter": "/JBIG2Decode", "decodedStreamLength": null, "rawStreamLength": 6 }
+      ],
+      "totalImageCount": 1,
+      "facts": ["readImage jbig2 with globals ref"]
+    },
+    "codec-not-last.pdf": {
+      "description": "Invalid chain /Filter [ /DCTDecode /FlateDecode ] (codec before container filter). qpdf fails decoding (libjpeg sees zlib bytes).",
+      "pageCount": 1,
+      "expectedImages": [
+        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "/DeviceGray", "filter": "[ /DCTDecode /FlateDecode ]", "decodedStreamLength": null, "rawStreamLength": null }
+      ],
+      "totalImageCount": 1,
+      "facts": ["readImage: unsupported filter chain"]
+    },
+    "shared-image-3-pages.pdf": {
+      "description": "One 2x2 RGB image XObject (obj 7) referenced from the resources of all three pages; the content stream is shared as well.",
+      "pageCount": 3,
+      "expectedImages": [
+        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "/DeviceRGB", "filter": null, "decodedStreamLength": 12, "rawStreamLength": 12 }
+      ],
+      "totalImageCount": 1,
+      "facts": ["pages [0, 1, 2]", "deduplication across pages"]
+    },
+    "rotated-page.pdf": {
+      "description": "Page 0: explicit /MediaBox [0 0 400 300] and /Rotate 90. Page 1: inherits both from the page tree root. Page 2: invalid /Rotate 45. No images, no /Resources (qpdf warns and repairs).",
+      "pageCount": 3,
+      "expectedImages": [],
+      "totalImageCount": 0,
+      "facts": ["getPageInfo mediaBox", "getPageInfo rotate (explicit, inherited, invalid)"]
+    },
+    "no-mediabox.pdf": {
+      "description": "One page without any /MediaBox (own or inherited). qpdf repairs the missing box to Letter during page tree traversal and warns.",
+      "pageCount": 1,
+      "expectedImages": [],
+      "totalImageCount": 0,
+      "facts": ["getPageInfo mediaBox when the PDF has none"]
+    },
+    "filter-abbreviations.pdf": {
+      "description": "2x2 RGB image compressed with Flate, written with the inline-image abbreviation /Fl. qpdf accepts the abbreviation; the filter string is reported as written.",
+      "pageCount": 1,
+      "expectedImages": [
+        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "/DeviceRGB", "filter": "/Fl", "decodedStreamLength": 12, "rawStreamLength": null }
+      ],
+      "totalImageCount": 1,
+      "facts": ["filters expands abbreviations"]
     }
   }
 }
