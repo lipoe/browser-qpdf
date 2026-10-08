@@ -149,6 +149,60 @@ static void copyFromJs(val const& uint8Array, std::vector<uint8_t>& target) {
     memoryView.call<void>("set", uint8Array);
 }
 
+// --- Dictionary facts as JS values ---
+//
+// Each helper turns one PDF object into the JS value the catalog reports for
+// it. They are the only place that decides how a missing or unexpected value
+// is represented, so every fact of the same shape is reported the same way.
+
+// Integer value; 0 when missing or not an integer (0.1.0 contract for
+// /Width, /Height and /Length).
+static int intOrZero(QPDFObjectHandle const& obj) {
+    return obj.isInteger() ? static_cast<int>(obj.getIntValue()) : 0;
+}
+
+// Integer value; JS null when the key is missing; 0 when present but not an
+// integer (0.1.0 contract for /BitsPerComponent).
+static val intOrNull(QPDFObjectHandle const& obj) {
+    if (obj.isNull()) {
+        return val::null();
+    }
+    return val(intOrZero(obj));
+}
+
+// Name with its leading slash; any other value as qpdf serialises it (PDF
+// syntax, indirect references unresolved); JS null when the key is missing
+// (0.1.0 contract for /ColorSpace and /Filter).
+static val nameOrUnparse(QPDFObjectHandle const& obj) {
+    if (obj.isNull()) {
+        return val::null();
+    }
+    if (obj.isName()) {
+        return val(obj.getName());
+    }
+    return val(obj.unparse());
+}
+
+// --- Image catalog entry ---
+
+// ImageInfo of one image XObject stream, read from its stream dictionary.
+// Fields: objId, generation, width, height, bitsPerComponent (int|null),
+// colorSpace (string|null), filter (string|null), streamLength.
+static val readImageInfo(QPDFObjectHandle& image) {
+    QPDFObjectHandle dict = image.getDict();
+    val info = val::object();
+    info.set("objId", image.getObjectID());
+    info.set("generation", image.getGeneration());
+    info.set("width", intOrZero(dict.getKey("/Width")));
+    info.set("height", intOrZero(dict.getKey("/Height")));
+    info.set("bitsPerComponent", intOrNull(dict.getKey("/BitsPerComponent")));
+    info.set("colorSpace", nameOrUnparse(dict.getKey("/ColorSpace")));
+    info.set("filter", nameOrUnparse(dict.getKey("/Filter")));
+    // Encoded (raw) byte length as declared in the dictionary
+    info.set("streamLength", intOrZero(dict.getKey("/Length")));
+    return info;
+}
+
 // --- Main wrapper class ---
 
 class QpdfWasmWrapper {
@@ -173,14 +227,11 @@ public:
 
     /**
      * Get a list of all images in the PDF with their metadata.
-     * Returns a JS array of ImageInfo objects.
+     * Returns a JS array of ImageInfo objects (see readImageInfo).
      *
-     * Each ImageInfo has: objId, generation, width, height,
-     * bitsPerComponent (int|null), colorSpace (string|null),
-     * filter (string|null), streamLength.
-     *
-     * Deduplicates across pages using objId+generation.
-     * When recursive=true, traverses Form XObjects (qpdf handles depth internally).
+     * Deduplicates across pages using objId+generation; order is first
+     * encounter. When recursive=true, traverses Form XObjects (qpdf handles
+     * depth internally).
      * Errors during traversal are not reported; the images found so far are returned.
      */
     val getImages(bool recursive) {
@@ -189,77 +240,16 @@ public:
             std::set<QPDFObjGen> seen;
 
             try {
-                QPDFPageDocumentHelper pdh(*qpdf_);
-                auto pages = pdh.getAllPages();
-
-                for (auto& page : pages) {
+                for (auto& page : QPDFPageDocumentHelper(*qpdf_).getAllPages()) {
                     page.forEachImage(
                         recursive,
-                        [&result, &seen](QPDFObjectHandle& obj,
+                        [&result, &seen](QPDFObjectHandle& image,
                                          QPDFObjectHandle& /*xobj_dict*/,
                                          std::string const& /*key*/) {
-                            // Deduplicate across pages
-                            QPDFObjGen og = obj.getObjGen();
-                            if (seen.count(og) > 0) {
-                                return;
+                            if (!seen.insert(image.getObjGen()).second) {
+                                return;  // already reported from another page or form
                             }
-                            seen.insert(og);
-
-                            // Get stream dictionary
-                            QPDFObjectHandle dict = obj.getDict();
-
-                            // Build ImageInfo object
-                            val info = val::object();
-                            info.set("objId", obj.getObjectID());
-                            info.set("generation", obj.getGeneration());
-
-                            // Width and Height (required fields)
-                            QPDFObjectHandle widthObj = dict.getKey("/Width");
-                            info.set("width", widthObj.isInteger()
-                                ? static_cast<int>(widthObj.getIntValue()) : 0);
-
-                            QPDFObjectHandle heightObj = dict.getKey("/Height");
-                            info.set("height", heightObj.isInteger()
-                                ? static_cast<int>(heightObj.getIntValue()) : 0);
-
-                            // BitsPerComponent (optional - null if missing)
-                            QPDFObjectHandle bpcObj = dict.getKey("/BitsPerComponent");
-                            if (bpcObj.isNull()) {
-                                info.set("bitsPerComponent", val::null());
-                            } else {
-                                info.set("bitsPerComponent",
-                                    bpcObj.isInteger()
-                                        ? static_cast<int>(bpcObj.getIntValue()) : 0);
-                            }
-
-                            // ColorSpace (optional - null if missing)
-                            QPDFObjectHandle csObj = dict.getKey("/ColorSpace");
-                            if (csObj.isNull()) {
-                                info.set("colorSpace", val::null());
-                            } else if (csObj.isName()) {
-                                info.set("colorSpace", val(csObj.getName()));
-                            } else {
-                                // Array or other complex type - unparse to string
-                                info.set("colorSpace", val(csObj.unparse()));
-                            }
-
-                            // Filter (optional - null if missing)
-                            QPDFObjectHandle filterObj = dict.getKey("/Filter");
-                            if (filterObj.isNull()) {
-                                info.set("filter", val::null());
-                            } else if (filterObj.isName()) {
-                                info.set("filter", val(filterObj.getName()));
-                            } else {
-                                // Array or other type - unparse to string
-                                info.set("filter", val(filterObj.unparse()));
-                            }
-
-                            // Stream length (encoded/raw byte length)
-                            QPDFObjectHandle lengthObj = dict.getKey("/Length");
-                            info.set("streamLength", lengthObj.isInteger()
-                                ? static_cast<int>(lengthObj.getIntValue()) : 0);
-
-                            result.call<void>("push", info);
+                            result.call<void>("push", readImageInfo(image));
                         });
                 }
             } catch (std::exception const& /*e*/) {
