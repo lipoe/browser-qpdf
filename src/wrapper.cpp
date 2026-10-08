@@ -257,20 +257,26 @@ static std::string bareName(std::string const& name) {
     return (!name.empty() && name[0] == '/') ? name.substr(1) : name;
 }
 
-static val stringArray(std::vector<std::string> const& items) {
+// JS array of `convert(item)` for every item of a C++ sequence.
+template <typename Items, typename Convert>
+static val toJsArray(Items const& items, Convert&& convert) {
     val array = val::array();
     for (auto const& item : items) {
-        array.call<void>("push", item);
+        array.call<void>("push", convert(item));
     }
     return array;
 }
 
+static val stringArray(std::vector<std::string> const& items) {
+    return toJsArray(items, [](std::string const& s) { return val(s); });
+}
+
 static val intArray(std::set<int> const& items) {
-    val array = val::array();
-    for (int item : items) {
-        array.call<void>("push", item);
-    }
-    return array;
+    return toJsArray(items, [](int i) { return val(i); });
+}
+
+static val refArray(std::vector<QPDFObjGen> const& items) {
+    return toJsArray(items, [](QPDFObjGen og) { return objRef(og); });
 }
 
 // --- Filters ---
@@ -357,12 +363,17 @@ static val colorSpaceInfo(QPDFObjectHandle cs, int depth) {
     if (family == "/Lab") return colorSpaceFamily("Lab", val(3), raw);
     if (family == "/Pattern") return colorSpaceFamily("Pattern", val::null(), raw);
 
+    // Rule for every array family below: the family is reported only when
+    // the array has the shape the spec requires; otherwise 'Unknown' with raw.
+
     if (family == "/ICCBased") {
         // [ /ICCBased stream ]; /N of the profile stream is the component count
-        QPDFObjectHandle profile = n >= 2 ? cs.getArrayItem(1) : QPDFObjectHandle::newNull();
-        val components = profile.isStream() ? integerOrNull(profile.getDict().getKey("/N")) : val::null();
-        val info = colorSpaceFamily("ICCBased", components, raw);
-        info.set("iccProfile", streamRefOrNull(profile));
+        if (n < 2 || !cs.getArrayItem(1).isStream()) {
+            return unknownColorSpace(raw);
+        }
+        QPDFObjectHandle profile = cs.getArrayItem(1);
+        val info = colorSpaceFamily("ICCBased", integerOrNull(profile.getDict().getKey("/N")), raw);
+        info.set("iccProfile", objRef(profile.getObjGen()));
         return info;
     }
 
@@ -487,12 +498,8 @@ static val readMaskInfo(CatalogEntry const& entry) {
     }
     masks.set("mask", mask);
 
-    val softMaskOf = val::array();
-    for (auto const& og : entry.softMaskOf) softMaskOf.call<void>("push", objRef(og));
-    masks.set("softMaskOf", softMaskOf);
-    val maskOf = val::array();
-    for (auto const& og : entry.maskOf) maskOf.call<void>("push", objRef(og));
-    masks.set("maskOf", maskOf);
+    masks.set("softMaskOf", refArray(entry.softMaskOf));
+    masks.set("maskOf", refArray(entry.maskOf));
     return masks;
 }
 
@@ -644,10 +651,13 @@ static val encodingOf(std::string const& residual, QPDFObjectHandle const& parms
         encoding.set("byteAlign", boolOr(p.getKey("/EncodedByteAlign"), false));
         encoding.set("endOfLine", boolOr(p.getKey("/EndOfLine"), false));
         encoding.set("endOfBlock", boolOr(p.getKey("/EndOfBlock"), true));
-    } else {  // JBIG2Decode
+    } else if (residual == "JBIG2Decode") {
         QPDFObjectHandle p = parms.isDictionary() ? parms : QPDFObjectHandle::newDictionary();
         encoding.set("kind", val("jbig2"));
         encoding.set("globals", streamRefOrNull(p.getKey("/JBIG2Globals")));
+    } else {
+        // codecCut only stops at the names isSpecImageCodec accepts
+        throw std::logic_error("encodingOf: not an image codec: " + residual);
     }
     return encoding;
 }

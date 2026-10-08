@@ -1,6 +1,9 @@
-import { runScenarios } from './run-scenarios.mjs';
+import { runSuite } from './run-scenarios.mjs';
 
-runScenarios().then(
-    (observations) => postMessage({ observations }),
-    (error) => postMessage({ error: String(error?.stack ?? error) })
-);
+// The page posts the suite name; the worker answers with its observations.
+onmessage = ({ data }) => {
+    runSuite(data.suite).then(
+        (observations) => postMessage({ observations }),
+        (error) => postMessage({ error: String(error?.stack ?? error) })
+    );
+};
