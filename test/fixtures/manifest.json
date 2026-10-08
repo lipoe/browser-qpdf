@@ -6,7 +6,8 @@
     "order": "expectedImages are listed in ascending (objId, generation) order, which is the order getImages() returns (since 0.3.0)",
     "lookup": "colorSpaceInfo.lookup is a plain number array here; the library returns a Uint8Array",
     "encoding": "ImageInfo.encoding as the filter chain declares it (null: more than one filter after the codec); readImage() reports the same object. encodedLength: readImage() data length; null means readImage fails (unknown or damaged container filter, or undescribable chain)",
-    "pageInfos": "getPageInfo(i) for every page; a missing /MediaBox is reported as qpdf repairs it (Letter)"
+    "pageInfos": "getPageInfo(i) for every page; a missing /MediaBox is reported as qpdf repairs it (Letter)",
+    "closure": "since 0.3.1 the catalog is closed under mask references: image XObjects named in /SMask or stream /Mask are entries with pages [] and directPages []"
   },
   "fixtures": {
     "simple-one-image.pdf": {
@@ -1874,7 +1875,7 @@
       ]
     },
     "smask-outside-resources.pdf": {
-      "description": "2x2 RGB picture (obj 5) whose /SMask names a 2x2 gray image (obj 6) that is in no resource dictionary (typical design-tool export). 0.3.0 lists only the picture.",
+      "description": "2x2 RGB picture (obj 5) whose /SMask names a 2x2 gray image (obj 6) that is in no resource dictionary (typical design-tool export). Since 0.3.1 the mask is a catalog entry with empty page lists (catalog closed under mask references).",
       "pageCount": 1,
       "expectedImages": [
         {
@@ -1913,9 +1914,44 @@
           "decodedStreamLength": 12,
           "rawStreamLength": 12,
           "encodedLength": 12
+        },
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "/DeviceGray",
+          "filter": null,
+          "colorSpaceInfo": {
+            "family": "DeviceGray",
+            "components": 1,
+            "raw": "/DeviceGray"
+          },
+          "filters": [],
+          "decode": null,
+          "encoding": {
+            "kind": "samples"
+          },
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [
+              {
+                "objId": 5,
+                "generation": 0
+              }
+            ],
+            "maskOf": []
+          },
+          "pages": [],
+          "directPages": [],
+          "decodedStreamLength": 4,
+          "rawStreamLength": 4,
+          "encodedLength": 4
         }
       ],
-      "totalImageCount": 1,
+      "totalImageCount": 2,
       "pageInfos": [
         {
           "index": 0,
@@ -1934,7 +1970,7 @@
       ]
     },
     "smask-jpeg.pdf": {
-      "description": "2x2 gray JPEG picture (obj 5) with a gray /SMask (obj 6) outside resources.",
+      "description": "2x2 gray JPEG picture (obj 5) with a gray /SMask (obj 6) outside resources. The mask is a catalog entry with empty page lists.",
       "pageCount": 1,
       "expectedImages": [
         {
@@ -1975,9 +2011,44 @@
           "decodedStreamLength": 4,
           "rawStreamLength": 337,
           "encodedLength": 337
+        },
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "/DeviceGray",
+          "filter": null,
+          "colorSpaceInfo": {
+            "family": "DeviceGray",
+            "components": 1,
+            "raw": "/DeviceGray"
+          },
+          "filters": [],
+          "decode": null,
+          "encoding": {
+            "kind": "samples"
+          },
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [
+              {
+                "objId": 5,
+                "generation": 0
+              }
+            ],
+            "maskOf": []
+          },
+          "pages": [],
+          "directPages": [],
+          "decodedStreamLength": 4,
+          "rawStreamLength": 4,
+          "encodedLength": 4
         }
       ],
-      "totalImageCount": 1,
+      "totalImageCount": 2,
       "pageInfos": [
         {
           "index": 0,
@@ -1995,7 +2066,7 @@
       ]
     },
     "smask-other-size.pdf": {
-      "description": "2x2 RGB picture (obj 5) with a 4x4 gray /SMask (obj 6) outside resources; nearest-neighbour resampling samples 255, 128, 64, 0.",
+      "description": "2x2 RGB picture (obj 5) with a 4x4 gray /SMask (obj 6) outside resources; nearest-neighbour resampling samples 255, 128, 64, 0. The mask is a catalog entry with empty page lists.",
       "pageCount": 1,
       "expectedImages": [
         {
@@ -2034,9 +2105,44 @@
           "decodedStreamLength": 12,
           "rawStreamLength": 12,
           "encodedLength": 12
+        },
+        {
+          "width": 4,
+          "height": 4,
+          "bitsPerComponent": 8,
+          "colorSpace": "/DeviceGray",
+          "filter": null,
+          "colorSpaceInfo": {
+            "family": "DeviceGray",
+            "components": 1,
+            "raw": "/DeviceGray"
+          },
+          "filters": [],
+          "decode": null,
+          "encoding": {
+            "kind": "samples"
+          },
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [
+              {
+                "objId": 5,
+                "generation": 0
+              }
+            ],
+            "maskOf": []
+          },
+          "pages": [],
+          "directPages": [],
+          "decodedStreamLength": 16,
+          "rawStreamLength": 16,
+          "encodedLength": 16
         }
       ],
-      "totalImageCount": 1,
+      "totalImageCount": 2,
       "pageInfos": [
         {
           "index": 0,
@@ -2054,7 +2160,7 @@
       ]
     },
     "smask-decode-inverted.pdf": {
-      "description": "2x2 RGB picture (obj 5) with a gray /SMask (obj 6, /Decode [1 0]) outside resources: stored 0, 127, 191, 255 means alpha 255, 128, 64, 0.",
+      "description": "2x2 RGB picture (obj 5) with a gray /SMask (obj 6, /Decode [1 0]) outside resources: stored 0, 127, 191, 255 means alpha 255, 128, 64, 0. The mask is a catalog entry with empty page lists.",
       "pageCount": 1,
       "expectedImages": [
         {
@@ -2093,9 +2199,47 @@
           "decodedStreamLength": 12,
           "rawStreamLength": 12,
           "encodedLength": 12
+        },
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "/DeviceGray",
+          "filter": null,
+          "colorSpaceInfo": {
+            "family": "DeviceGray",
+            "components": 1,
+            "raw": "/DeviceGray"
+          },
+          "filters": [],
+          "decode": [
+            1,
+            0
+          ],
+          "encoding": {
+            "kind": "samples"
+          },
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [
+              {
+                "objId": 5,
+                "generation": 0
+              }
+            ],
+            "maskOf": []
+          },
+          "pages": [],
+          "directPages": [],
+          "decodedStreamLength": 4,
+          "rawStreamLength": 4,
+          "encodedLength": 4
         }
       ],
-      "totalImageCount": 1,
+      "totalImageCount": 2,
       "pageInfos": [
         {
           "index": 0,
@@ -2113,7 +2257,7 @@
       ]
     },
     "smask-shared.pdf": {
-      "description": "Two pictures (obj 5 RGB, obj 6 gray) share one /SMask (obj 7) outside resources.",
+      "description": "Two pictures (obj 5 RGB, obj 6 gray) share one /SMask (obj 7) outside resources. The mask is one catalog entry with softMaskOf of length 2.",
       "pageCount": 1,
       "expectedImages": [
         {
@@ -2189,9 +2333,48 @@
           "decodedStreamLength": 4,
           "rawStreamLength": 4,
           "encodedLength": 4
+        },
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "/DeviceGray",
+          "filter": null,
+          "colorSpaceInfo": {
+            "family": "DeviceGray",
+            "components": 1,
+            "raw": "/DeviceGray"
+          },
+          "filters": [],
+          "decode": null,
+          "encoding": {
+            "kind": "samples"
+          },
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [
+              {
+                "objId": 5,
+                "generation": 0
+              },
+              {
+                "objId": 6,
+                "generation": 0
+              }
+            ],
+            "maskOf": []
+          },
+          "pages": [],
+          "directPages": [],
+          "decodedStreamLength": 4,
+          "rawStreamLength": 4,
+          "encodedLength": 4
         }
       ],
-      "totalImageCount": 2,
+      "totalImageCount": 3,
       "pageInfos": [
         {
           "index": 0,

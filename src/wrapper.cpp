@@ -526,6 +526,36 @@ static val readMaskInfo(CatalogEntry const& entry) {
     return masks;
 }
 
+// Closes the catalog under mask references: every image XObject that a
+// catalog entry names in /SMask or in a stream-valued /Mask becomes an entry
+// itself (with empty page sets, since no page resources reach it). Masks are
+// found through the image dictionary, never through resources, so without
+// this step most soft masks of real PDFs have no facts. Streams that are not
+// image XObjects are not added (the forward reference is still reported).
+// Repeats until nothing new is added; one malformed dictionary degrades to
+// "no masks added for that image" only.
+static void closeOverMasks(Catalog& catalog) {
+    std::vector<QPDFObjectHandle> pending;
+    for (auto& [og, entry] : catalog) pending.push_back(entry.image);
+    while (!pending.empty()) {
+        QPDFObjectHandle image = pending.back();
+        pending.pop_back();
+        try {
+            QPDFObjectHandle dict = image.getDict();
+            for (char const* key : {"/SMask", "/Mask"}) {
+                QPDFObjectHandle mask = dict.getKey(key);
+                if (!mask.isStream() || !mask.isImage(false)) continue;
+                QPDFObjGen og = mask.getObjGen();
+                if (catalog.count(og) > 0) continue;
+                catalog[og].image = mask;  // pages and directPages stay empty
+                pending.push_back(mask);
+            }
+        } catch (std::exception const&) {
+            // this image's mask references are left out of the closure
+        }
+    }
+}
+
 // Fills the mask relations of every catalog entry from /SMask and /Mask.
 // Back-references are only recorded for targets that are in the catalog;
 // the forward reference is reported either way. One malformed dictionary
@@ -735,11 +765,14 @@ public:
      * Returns a JS array of ImageInfo objects (see buildImageInfo), in
      * ascending (objId, generation) order.
      *
-     * Each page is traversed once within the requested scope (recursive =
-     * through Form XObjects) to collect membership and `pages`, and once
-     * without recursion to collect `directPages`. A second pass over the
-     * collected images reads the mask relations. Images are deduplicated by
-     * object; stencil masks (/ImageMask true) are included.
+     * The catalog is: every image XObject reachable from the pages'
+     * resources (recursive = through Form XObjects), plus every image
+     * XObject those images name as /SMask or stream /Mask (closure, with
+     * empty page sets). Each page is traversed once within the requested
+     * scope to collect membership and `pages`, and once without recursion to
+     * collect `directPages`; then the closure and the mask relations are
+     * computed. Images are deduplicated by object; stencil masks
+     * (/ImageMask true) are included.
      *
      * Errors during traversal are not reported; the images collected so far
      * are returned.
@@ -781,6 +814,7 @@ public:
                 for (auto& [og, entry] : catalog) entry.directPages = entry.pages;
             }
 
+            closeOverMasks(catalog);
             collectMaskRelations(catalog);
 
             val result = val::array();

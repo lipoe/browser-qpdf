@@ -265,6 +265,31 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
         });
     });
 
+    describe('catalog closure under mask references', () => {
+        it('a mask outside every resource dictionary has the same facts as one inside, except the page lists', () => {
+            const inside = open('smask-pair.pdf');
+            const outside = open('smask-outside-resources.pdf');
+            const maskOf = (doc: PdfDocument) => imagesOf(doc, true).find((i) => i.masks.softMaskOf.length > 0)!;
+            const a = maskOf(inside);
+            const b = maskOf(outside);
+            const { pages: pa, directPages: da, objId: _oa, ...factsA } = a;
+            const { pages: pb, directPages: db, objId: _ob, ...factsB } = b;
+            expect(factsB).toEqual(factsA);
+            expect([pa, da]).toEqual([[0], [0]]);
+            expect([pb, db]).toEqual([[], []]);
+            inside.close();
+            outside.close();
+        });
+
+        it('adds image XObjects only; a non-image /SMask target keeps the reference and nothing else', () => {
+            const doc = open('smask-not-an-image.pdf');
+            const images = imagesOf(doc, true);
+            expect(images).toHaveLength(1);
+            expect(images[0].masks.softMask).toEqual({ objId: 6, generation: 0 });
+            doc.close();
+        });
+    });
+
     describe('replaceImageStream + writePdf', () => {
         it('replaces data and metadata of one image and leaves the others untouched', () => {
             const doc = open('multi-image.pdf');
