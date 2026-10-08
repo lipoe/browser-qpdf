@@ -1,6 +1,6 @@
 {
   "name": "@lipoe/browser-qpdf",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "module",
   "license": "Apache-2.0",
   "description": "Browser-compatible WASM module exposing qpdf's library API for reading PDF image XObjects (facts and encoded bytes) and replacing image streams; codec module for turning them into pixels",
