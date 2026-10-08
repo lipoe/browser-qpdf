@@ -50,7 +50,18 @@ import {
     type Result,
     type WriteOptions,
 } from '@lipoe/browser-qpdf';
-import { decodeSamples, applySoftMask, type CodecResult, type RgbaImage } from '@lipoe/browser-qpdf/codecs';
+import { decodeSamples, applySoftMask, canDecode, toImageBitmap, toRgbaImage, type CodecResult, type RgbaImage, type ToImageBitmapOptions } from '@lipoe/browser-qpdf/codecs';
+
+/** Browser-only code path, type-checked but not run here. */
+export async function masked(doc: PdfDocument, info: ImageInfo, mask: ImageInfo): Promise<CodecResult<ImageBitmap>> {
+    const read = doc.readImage(info.objId, info.generation);
+    const maskRead = doc.readImage(mask.objId, mask.generation);
+    if (!read.ok || !maskRead.ok) return { ok: false, code: 'DECODE_FAILED', error: 'read failed' };
+    const options: ToImageBitmapOptions = { resizeWidth: 300, softMask: { image: maskRead.value, info: mask } };
+    void canDecode(info);
+    void toRgbaImage(read.value, info);
+    return toImageBitmap(read.value, info, options);
+}
 
 function decodeFirst(doc: PdfDocument, info: ImageInfo): CodecResult<RgbaImage> {
     const read: Result<EncodedImage> = doc.readImage(info.objId, info.generation);

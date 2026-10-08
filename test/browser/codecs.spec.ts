@@ -28,3 +28,21 @@ test('toImageBitmap in a Web Worker decodes what stage A covers', async ({ page 
     const observations = await page.evaluate(() => window.runSuiteInWorker('codecs'));
     expect(observations).toEqual(EXPECTED);
 });
+
+test('toImageBitmap with a mask that cannot be decoded fails with the mask\'s code, never returning the unmasked picture', async ({ page }) => {
+    const result = await page.evaluate(async () => {
+        const codecs = await import('/dist/codecs/index.js');
+        const rgb = { family: 'DeviceRGB', components: 3, raw: '/DeviceRGB' };
+        const masks = { isStencilMask: false, softMaskInData: null, softMask: null, mask: null, softMaskOf: [], maskOf: [] };
+        const info = (colorSpaceInfo: unknown) => ({
+            objId: 1, generation: 0, width: 1, height: 1, bitsPerComponent: 8, colorSpace: '', filter: null, streamLength: 0,
+            colorSpaceInfo, filters: [], decode: null, encoding: { kind: 'samples' }, masks, pages: [0], directPages: [0],
+        });
+        const picture = { data: new Uint8Array([255, 0, 0]), encoding: { kind: 'samples' } };
+        const badMask = { data: new Uint8Array([0]), encoding: { kind: 'samples' } };
+        const separation = { family: 'Separation', components: 1, names: ['Spot'], alternate: rgb, raw: '' };
+        const r = await codecs.toImageBitmap(picture, info(rgb), { softMask: { image: badMask, info: info(separation) } });
+        return r.ok ? 'ok' : r.code;
+    });
+    expect(result).toBe('UNSUPPORTED_COLOR_SPACE');
+});
