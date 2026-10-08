@@ -28,6 +28,15 @@ is sorted by object id).
   invalid). qpdf repairs a missing or malformed `/MediaBox` to Letter while
   reading the page tree; the repaired value is reported. Exported type
   `PageInfo`.
+- Codec module as subpath export `@lipoe/browser-qpdf/codecs` (stage A):
+  `decodeSamples` (Device colour spaces, ICCBased by component count,
+  Indexed, 1 to 16 bits per component, `/Decode`, stencil masks as
+  coverage), `applySoftMask`, and the browser adapter `toImageBitmap`
+  (JPEG via the browser, samples via `decodeSamples`). Own error codes
+  `CodecErrorCode` on the shared result shape; `ResultOf<T, Code>` is
+  exported from the core and `Result<T>` is now an alias of it (no change
+  for callers). JPX, CCITT and JBIG2 return `UNSUPPORTED_ENCODING` in this
+  version; Separation, DeviceN, Lab and Cal* return `UNSUPPORTED_COLOR_SPACE`.
 
 ### Changed
 - `getImages()` lists stencil masks (`/ImageMask true`), which qpdf's
