@@ -460,16 +460,17 @@ function generateSharedImage3Pages() {
 
 /**
  * Page facts: page 0 has explicit /MediaBox [0 0 400 300] and /Rotate 90;
- * page 1 inherits both from the page tree root; page 2 has the invalid /Rotate 45.
- * No images.
+ * page 1 inherits both from the page tree root; page 2 has the invalid
+ * /Rotate 45; page 3 has /Rotate -90 (normalises to 270). No images.
  */
 function generateRotatedPage() {
   return buildPdf([
     catalog(),
-    pages([3, 4, 5], '/MediaBox [0 0 400 300] /Rotate 90'),
-    page({ contents: 6, mediaBox: '[0 0 400 300]', rotate: 90 }),
-    page({ contents: 6, mediaBox: null }),
-    page({ contents: 6, mediaBox: null, rotate: 45 }),
+    pages([3, 4, 5, 6], '/MediaBox [0 0 400 300] /Rotate 90'),
+    page({ contents: 7, mediaBox: '[0 0 400 300]', rotate: 90 }),
+    page({ contents: 7, mediaBox: null }),
+    page({ contents: 7, mediaBox: null, rotate: 45 }),
+    page({ contents: 7, mediaBox: null, rotate: -90 }),
     contentStream(drawText()),
   ]);
 }
@@ -488,6 +489,60 @@ function generateNoMediaBox() {
 function generateFilterAbbreviations() {
   return singlePagePdf(`/XObject << /Im1 ${ref(5)} >>`, drawImage('Im1'), [
     imageXObject('/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceRGB /Filter /Fl', deflateSync(RGB_2X2)),
+  ]);
+}
+
+/**
+ * PNG predictor rows for Flate /DecodeParms /Predictor >= 10: one filter-type
+ * byte per row. Row 0 uses None (0), every further row Up (2), i.e. the byte
+ * difference to the row above.
+ */
+function pngPredictorRows(rows) {
+  const out = [];
+  rows.forEach((row, i) => {
+    if (i === 0) out.push(0, ...row);
+    else out.push(2, ...row.map((v, j) => (v - rows[i - 1][j]) & 0xff));
+  });
+  return Buffer.from(out);
+}
+
+/** Flate with PNG predictor (Up) over the 2x2 RGB pixels; decodes to RGB_2X2. */
+function generateFlatePredictor() {
+  const rows = [Array.from(RGB_2X2.subarray(0, 6)), Array.from(RGB_2X2.subarray(6, 12))];
+  return singlePagePdf(`/XObject << /Im1 ${ref(5)} >>`, drawImage('Im1'), [
+    imageXObject(
+      '/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceRGB /Filter /FlateDecode /DecodeParms << /Predictor 12 /Colors 3 /BitsPerComponent 8 /Columns 2 >>',
+      deflateSync(pngPredictorRows(rows))
+    ),
+  ]);
+}
+
+/**
+ * JPEG wrapped in Flate with a PNG predictor on the Flate stage:
+ * /Filter [ /FlateDecode /DCTDecode ], /DecodeParms [ << predictor >> null ].
+ * Exercises the DecodeParms slicing when the codec is cut off.
+ */
+function generateFlatePredictorDct() {
+  const jpeg = createMinimalJpeg();
+  return singlePagePdf(`/XObject << /Im1 ${ref(5)} >>`, drawImage('Im1'), [
+    imageXObject(
+      `/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceGray /Filter [ /FlateDecode /DCTDecode ] /DecodeParms [ << /Predictor 12 /Colors 1 /BitsPerComponent 8 /Columns ${jpeg.length} >> null ]`,
+      deflateSync(pngPredictorRows([Array.from(jpeg)]))
+    ),
+  ]);
+}
+
+/** A filter name no reader knows: every decode must fail, raw bytes stay readable. */
+function generateUnknownFilter() {
+  return singlePagePdf(`/XObject << /Im1 ${ref(5)} >>`, drawImage('Im1'), [
+    imageXObject('/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceRGB /Filter /FooDecode', RGB_2X2),
+  ]);
+}
+
+/** Flate stream with a valid zlib header followed by garbage: inflate fails. */
+function generateDamagedFlate() {
+  return singlePagePdf(`/XObject << /Im1 ${ref(5)} >>`, drawImage('Im1'), [
+    imageXObject('/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceRGB /Filter /FlateDecode', Buffer.from([0x78, 0x9c, 0xff, 0xff, 0x00])),
   ]);
 }
 
@@ -523,6 +578,10 @@ const fixtures = [
   { name: 'rotated-page.pdf', generate: generateRotatedPage },
   { name: 'no-mediabox.pdf', generate: generateNoMediaBox },
   { name: 'filter-abbreviations.pdf', generate: generateFilterAbbreviations },
+  { name: 'flate-predictor.pdf', generate: generateFlatePredictor },
+  { name: 'flate-predictor-dct.pdf', generate: generateFlatePredictorDct },
+  { name: 'unknown-filter.pdf', generate: generateUnknownFilter },
+  { name: 'damaged-flate.pdf', generate: generateDamagedFlate },
 ];
 
 for (const fixture of fixtures) {

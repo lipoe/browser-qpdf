@@ -1509,8 +1509,8 @@
       ]
     },
     "rotated-page.pdf": {
-      "description": "Page 0: explicit /MediaBox [0 0 400 300] and /Rotate 90. Page 1: inherits both from the page tree root. Page 2: invalid /Rotate 45. No images, no /Resources (qpdf warns and repairs).",
-      "pageCount": 3,
+      "description": "Page 0: explicit /MediaBox [0 0 400 300] and /Rotate 90. Page 1: inherits both from the page tree root. Page 2: invalid /Rotate 45. Page 3: /Rotate -90 (normalises to 270). No images, no /Resources (qpdf warns and repairs).",
+      "pageCount": 4,
       "expectedImages": [],
       "totalImageCount": 0,
       "facts": [
@@ -1547,6 +1547,16 @@
             "height": 300
           },
           "rotate": null
+        },
+        {
+          "index": 3,
+          "mediaBox": {
+            "x": 0,
+            "y": 0,
+            "width": 400,
+            "height": 300
+          },
+          "rotate": 270
         }
       ]
     },
@@ -1627,6 +1637,236 @@
           },
           "rotate": 0
         }
+      ]
+    },
+    "flate-predictor.pdf": {
+      "description": "2x2 RGB, Flate with PNG predictor (/Predictor 12, Up rows). qpdf applies the predictor; decodes to the same pixels as simple-one-image.pdf.",
+      "pageCount": 1,
+      "expectedImages": [
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "/DeviceRGB",
+          "filter": "/FlateDecode",
+          "colorSpaceInfo": {
+            "family": "DeviceRGB",
+            "components": 3,
+            "raw": "/DeviceRGB"
+          },
+          "filters": [
+            "FlateDecode"
+          ],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": 12,
+          "rawStreamLength": null,
+          "encoding": {
+            "kind": "samples"
+          },
+          "encodedLength": 12
+        }
+      ],
+      "totalImageCount": 1,
+      "pageInfos": [
+        {
+          "index": 0,
+          "mediaBox": {
+            "x": 0,
+            "y": 0,
+            "width": 612,
+            "height": 792
+          },
+          "rotate": 0
+        }
+      ],
+      "facts": [
+        "readImage removes Flate with predictor",
+        "DecodeParms with a single filter"
+      ]
+    },
+    "flate-predictor-dct.pdf": {
+      "description": "2x2 gray JPEG wrapped in Flate with a PNG predictor on the Flate stage: /Filter [ /FlateDecode /DCTDecode ], /DecodeParms [ << predictor >> null ]. readImage must slice the DecodeParms array with the filter prefix.",
+      "pageCount": 1,
+      "expectedImages": [
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "/DeviceGray",
+          "filter": "[ /FlateDecode /DCTDecode ]",
+          "colorSpaceInfo": {
+            "family": "DeviceGray",
+            "components": 1,
+            "raw": "/DeviceGray"
+          },
+          "filters": [
+            "FlateDecode",
+            "DCTDecode"
+          ],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": 4,
+          "rawStreamLength": null,
+          "encoding": {
+            "kind": "jpeg"
+          },
+          "encodedLength": 337
+        }
+      ],
+      "totalImageCount": 1,
+      "pageInfos": [
+        {
+          "index": 0,
+          "mediaBox": {
+            "x": 0,
+            "y": 0,
+            "width": 612,
+            "height": 792
+          },
+          "rotate": 0
+        }
+      ],
+      "facts": [
+        "readImage: DecodeParms prefix for a codec chain"
+      ]
+    },
+    "unknown-filter.pdf": {
+      "description": "2x2 RGB with /Filter /FooDecode, a name no reader knows. Every decode fails; the raw bytes stay readable.",
+      "pageCount": 1,
+      "expectedImages": [
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "/DeviceRGB",
+          "filter": "/FooDecode",
+          "colorSpaceInfo": {
+            "family": "DeviceRGB",
+            "components": 3,
+            "raw": "/DeviceRGB"
+          },
+          "filters": [
+            "FooDecode"
+          ],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": null,
+          "rawStreamLength": 12,
+          "encoding": null,
+          "encodedLength": null
+        }
+      ],
+      "totalImageCount": 1,
+      "pageInfos": [
+        {
+          "index": 0,
+          "mediaBox": {
+            "x": 0,
+            "y": 0,
+            "width": 612,
+            "height": 792
+          },
+          "rotate": 0
+        }
+      ],
+      "facts": [
+        "readImage: unknown filter -> error, never raw bytes as samples"
+      ]
+    },
+    "damaged-flate.pdf": {
+      "description": "2x2 RGB whose Flate stream is a zlib header followed by garbage. Inflate fails; nothing partial is returned.",
+      "pageCount": 1,
+      "expectedImages": [
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "/DeviceRGB",
+          "filter": "/FlateDecode",
+          "colorSpaceInfo": {
+            "family": "DeviceRGB",
+            "components": 3,
+            "raw": "/DeviceRGB"
+          },
+          "filters": [
+            "FlateDecode"
+          ],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": null,
+          "rawStreamLength": 5,
+          "encoding": null,
+          "encodedLength": null
+        }
+      ],
+      "totalImageCount": 1,
+      "pageInfos": [
+        {
+          "index": 0,
+          "mediaBox": {
+            "x": 0,
+            "y": 0,
+            "width": 612,
+            "height": 792
+          },
+          "rotate": 0
+        }
+      ],
+      "facts": [
+        "readImage: damaged data -> error, never partial bytes"
       ]
     }
   }

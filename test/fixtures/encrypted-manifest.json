@@ -5,34 +5,46 @@
   "ownerPassword": "owner",
   "fixtures": {
     "aes256-user.pdf": {
+      "source": "multi-image.pdf",
       "algorithm": "AES-256",
       "userPassword": "geheim",
       "requiresPassword": true
     },
     "aes128-user.pdf": {
+      "source": "multi-image.pdf",
       "algorithm": "AES-128",
       "userPassword": "geheim",
       "requiresPassword": true
     },
     "rc4-128-user.pdf": {
+      "source": "multi-image.pdf",
       "algorithm": "RC4-128",
       "userPassword": "geheim",
       "requiresPassword": true
     },
     "rc4-40-user.pdf": {
+      "source": "multi-image.pdf",
       "algorithm": "RC4-40",
       "userPassword": "geheim",
       "requiresPassword": true
     },
     "aes256-owner-only.pdf": {
+      "source": "multi-image.pdf",
       "algorithm": "AES-256",
       "userPassword": "",
       "requiresPassword": false
     },
     "aes128-owner-only.pdf": {
+      "source": "multi-image.pdf",
       "algorithm": "AES-128",
       "userPassword": "",
       "requiresPassword": false
+    },
+    "aes256-jpeg-chain.pdf": {
+      "source": "flate-dct-chain.pdf",
+      "algorithm": "AES-256",
+      "userPassword": "geheim",
+      "requiresPassword": true
     }
   }
 }

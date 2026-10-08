@@ -45,6 +45,35 @@ is sorted by object id).
 - `getImages()` returns the catalog in ascending `(objId, generation)` order
   instead of qpdf's traversal order. Order by `pages[0]` for page order.
 
+Type-level notes: `ColorSpaceInfo` and `ImageEncoding` are discriminated
+unions; narrow on `family` / `kind` before reading the per-variant fields
+(`cs.family === 'Indexed' && cs.lookup`). `Result<T>` is now an alias of
+`ResultOf<T, ErrorCode>`; nothing changes for code that reads results.
+
+### Known limitations
+- `getImages()` does not report errors while traversing the pages; it returns
+  the images found so far as a successful result (unchanged since 0.1.0).
+- Inline images (`BI … EI` in content streams) are not XObjects and are not
+  listed. Masks that are not in any resource dictionary are referenced
+  (`masks.softMask`, `masks.mask`) but not listed. Paint order within a page
+  is not reported.
+- qpdf repairs a missing or malformed `/MediaBox` to Letter while reading the
+  page tree and warns on the console (as it does for a missing `/Resources`);
+  `getPageInfo` reports the repaired value.
+- Codec module stage A decodes raw samples and JPEG. JPX, CCITT and JBIG2
+  return `UNSUPPORTED_ENCODING`; Separation, DeviceN, Lab and Cal* colour
+  spaces return `UNSUPPORTED_COLOR_SPACE`. The facts for all of them are
+  reported by the core (`readImage`, `colorSpaceInfo`), so a caller can
+  route them to another decoder.
+- Colour handling in the codec module is uncalibrated: device colour spaces
+  map to sRGB directly, ICCBased by component count.
+
+### Build
+- qpdf stays at `v12.4.2`; the WASM module was rebuilt for the new wrapper
+  (`dist/build-info.json`).
+- TypeScript emits the codec module to `dist/codecs/`, published as the
+  subpath export `./codecs`; nothing else in the package layout changed.
+
 ## 0.2.0
 
 Mostly backward compatible: unencrypted PDFs behave as in 0.1.0, existing
