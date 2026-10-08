@@ -25,5 +25,5 @@
 export { canDecode, type DecodeRoute, type DecodeSupport } from './support.js';
 export { decodeSamples, type RgbaImage } from './samples.js';
 export { applySoftMask } from './mask.js';
-export { toImageBitmap, toImageData, type ToImageBitmapOptions } from './browser.js';
+export { toImageBitmap, toRgbaImage, toImageData, type ToImageBitmapOptions } from './browser.js';
 export { CODEC_ERROR_CODES, type CodecErrorCode, type CodecResult } from './errors.js';

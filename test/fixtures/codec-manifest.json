@@ -1,5 +1,5 @@
 {
-  "description": "Expected results of the codec module (stage A) for the fixtures of manifest.json: decodeSamples on the output of readImage, per image in catalog order (getImages({recursive: true})). `pixels` is the full RGBA buffer; `code` the CodecErrorCode when decoding is refused. Fixtures not listed have no decodable image (no images, or codecs outside stage A).",
+  "description": "Expected results of the codec module (stage A) for the fixtures of manifest.json: decodeSamples on the output of readImage, per image in catalog order (getImages({recursive: true})). `pixels` is the full RGBA buffer; `code` the CodecErrorCode when decoding is refused. Fixtures not listed have no decodable image (no images, or codecs outside stage A). `withSoftMask` is the RGBA after applySoftMask with the image's own mask; `withSoftMaskAlpha` the alpha channel alone (JPEG pictures, whose RGB is browser-dependent).",
   "fixtures": {
     "simple-one-image.pdf": [
       {
@@ -406,12 +406,76 @@
           255,
           0,
           255
+        ],
+        "withSoftMask": [
+          255,
+          0,
+          0,
+          255,
+          0,
+          255,
+          0,
+          128,
+          0,
+          0,
+          255,
+          64,
+          255,
+          255,
+          0,
+          0
+        ]
+      },
+      {
+        "pixels": [
+          255,
+          255,
+          255,
+          255,
+          128,
+          128,
+          128,
+          255,
+          64,
+          64,
+          64,
+          255,
+          0,
+          0,
+          0,
+          255
         ]
       }
     ],
     "smask-jpeg.pdf": [
       {
-        "code": "UNSUPPORTED_ENCODING"
+        "code": "UNSUPPORTED_ENCODING",
+        "withSoftMaskAlpha": [
+          255,
+          128,
+          64,
+          0
+        ]
+      },
+      {
+        "pixels": [
+          255,
+          255,
+          255,
+          255,
+          128,
+          128,
+          128,
+          255,
+          64,
+          64,
+          64,
+          255,
+          0,
+          0,
+          0,
+          255
+        ]
       }
     ],
     "smask-other-size.pdf": [
@@ -433,6 +497,92 @@
           255,
           0,
           255
+        ],
+        "withSoftMask": [
+          255,
+          0,
+          0,
+          255,
+          0,
+          255,
+          0,
+          128,
+          0,
+          0,
+          255,
+          64,
+          255,
+          255,
+          0,
+          0
+        ]
+      },
+      {
+        "pixels": [
+          255,
+          255,
+          255,
+          255,
+          17,
+          17,
+          17,
+          255,
+          128,
+          128,
+          128,
+          255,
+          17,
+          17,
+          17,
+          255,
+          17,
+          17,
+          17,
+          255,
+          17,
+          17,
+          17,
+          255,
+          17,
+          17,
+          17,
+          255,
+          17,
+          17,
+          17,
+          255,
+          64,
+          64,
+          64,
+          255,
+          17,
+          17,
+          17,
+          255,
+          0,
+          0,
+          0,
+          255,
+          17,
+          17,
+          17,
+          255,
+          17,
+          17,
+          17,
+          255,
+          17,
+          17,
+          17,
+          255,
+          17,
+          17,
+          17,
+          255,
+          17,
+          17,
+          17,
+          255
         ]
       }
     ],
@@ -453,6 +603,44 @@
           255,
           255,
           255,
+          0,
+          255
+        ],
+        "withSoftMask": [
+          255,
+          0,
+          0,
+          255,
+          0,
+          255,
+          0,
+          128,
+          0,
+          0,
+          255,
+          64,
+          255,
+          255,
+          0,
+          0
+        ]
+      },
+      {
+        "pixels": [
+          255,
+          255,
+          255,
+          255,
+          128,
+          128,
+          128,
+          255,
+          64,
+          64,
+          64,
+          255,
+          0,
+          0,
           0,
           255
         ]
@@ -477,6 +665,24 @@
           255,
           0,
           255
+        ],
+        "withSoftMask": [
+          255,
+          0,
+          0,
+          255,
+          0,
+          255,
+          0,
+          128,
+          0,
+          0,
+          255,
+          64,
+          255,
+          255,
+          0,
+          0
         ]
       },
       {
@@ -496,6 +702,44 @@
           255,
           255,
           255,
+          255
+        ],
+        "withSoftMask": [
+          0,
+          0,
+          0,
+          255,
+          85,
+          85,
+          85,
+          128,
+          170,
+          170,
+          170,
+          64,
+          255,
+          255,
+          255,
+          0
+        ]
+      },
+      {
+        "pixels": [
+          255,
+          255,
+          255,
+          255,
+          128,
+          128,
+          128,
+          255,
+          64,
+          64,
+          64,
+          255,
+          0,
+          0,
+          0,
           255
         ]
       }

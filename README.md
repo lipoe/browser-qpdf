@@ -345,9 +345,13 @@ ignored for unencrypted PDFs.
 
 ### `PdfDocument.getImages(options?): Result<ImageInfo[]>`
 
-Enumerate all image XObjects, including stencil masks (`/ImageMask true`),
-in ascending object order. Pass `{ recursive: true }` to include images
-reachable through Form XObjects.
+Enumerate all image XObjects in ascending object order: every image XObject
+reachable from the pages' resources (pass `{ recursive: true }` to follow Form
+XObjects), including stencil masks (`/ImageMask true`), **plus every image
+XObject those images name as `/SMask` or stream `/Mask`** (since 0.3.1; masks
+are referenced from the image dictionary, not from resources, so most soft
+masks of real PDFs are only in the catalog through this closure). Referenced
+masks have `pages: []` and `directPages: []`.
 
 Every `ImageInfo` carries the 0.1.0 fields as written in the stream
 dictionary (`width`, `height`, `bitsPerComponent`, `colorSpace`, `filter`,
@@ -371,6 +375,9 @@ dictionary (`width`, `height`, `bitsPerComponent`, `colorSpace`, `filter`,
   catalog that use this stream as a mask (`softMaskOf`, `maskOf`).
 - `pages`: 0-based indices of the pages from whose resources the image is reachable
   within the requested scope; `directPages`: pages whose own resources name it.
+  Both are reachability facts: a page's resources may be inherited from the page
+  tree and shared between pages, so `pages` can be a superset of the pages that
+  actually paint the image (painted images per page are not reported yet).
 
 The string fields `colorSpace` and `filter` are PDF syntax as qpdf serialises it
 (an indirect reference stays `"6 0 R"`); they are kept for compatibility, prefer
@@ -474,13 +481,20 @@ its own codes: `UNSUPPORTED_ENCODING`, `UNSUPPORTED_COLOR_SPACE`,
   approximated.
 - `applySoftMask(image, mask): CodecResult<RgbaImage>`: the decoded mask's red
   channel becomes the image's alpha (nearest-neighbour resampling).
-- `toImageBitmap(image, info, { resizeWidth?, resizeHeight?, resizeQuality? })`
+- `toRgbaImage(image, info)` (browser only): the image as RGBA at full size,
+  `'samples'` through `decodeSamples`, `'jpeg'` through the browser's decoder and a
+  canvas (RGB values are "as this browser decodes the JPEG"). The building block
+  for compositing and pixel inspection.
+- `toImageBitmap(image, info, { resizeWidth?, resizeHeight?, resizeQuality?, softMask? })`
   (browser only): `'jpeg'` through the browser's decoder, `'samples'` through
   `decodeSamples`; resizing happens inside `createImageBitmap`. Other kinds return
-  `UNSUPPORTED_ENCODING` until their codec stage ships. The image's own soft mask
-  is **not** applied (the JPEG route never has pixels to write alpha into); the
-  bitmap is opaque, stencil masks excepted. For transparency decode image and
-  mask with `decodeSamples` and use `applySoftMask`.
+  `UNSUPPORTED_ENCODING` until their codec stage ships. With
+  `softMask: { image, info }` (the image's `/SMask`, read with `readImage` and its
+  catalog entry) the mask is composited at full resolution before the resize
+  (resampled to the image size, `/Decode` honoured); a mask that cannot be decoded
+  fails the call. Without `softMask` the bitmap is opaque (stencil masks excepted).
+  Stencil `/Mask`, colour-key masks and `/Matte` are not composited. With a mask the
+  picture is held once at full size as RGBA, so decode sequentially.
 
 ## Releasing
 

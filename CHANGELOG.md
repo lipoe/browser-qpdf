@@ -1,6 +1,44 @@
 # Changelog
 
-## 0.3.0 (unreleased)
+## 0.3.1 (unreleased)
+
+Additive to 0.3.0, with one observable change: `getImages()` now also lists
+the mask streams that catalog images reference (see "Changed"). Driven by a
+measurement over 32 real pattern PDFs in which 138 of 203 soft masks were in
+no resource dictionary and therefore had no facts in 0.3.0.
+
+### Added
+- The catalog is closed under mask references: every image XObject that a
+  catalog image names in `/SMask` or in a stream-valued `/Mask` is a catalog
+  entry too, with `pages: []` and `directPages: []` (no page resources reach
+  it) and `softMaskOf` / `maskOf` filled as before. Masks inside and outside
+  resource dictionaries have identical facts except the page lists, so a
+  consumer works with one list and one lookup by `ObjRef`.
+- Codec module: `toRgbaImage(image, info)` (browser adapter) decodes to RGBA
+  at full size, JPEG through the browser's decoder and a canvas, samples
+  through `decodeSamples`. `ToImageBitmapOptions.softMask: { image, info }`
+  composites the image's soft mask before resizing (mask resampled to the
+  image size, its `/Decode` honoured, compositing at full resolution); a mask
+  that cannot be decoded fails the call with its codec error. Stencil and
+  colour-key `/Mask` and `/Matte` are not composited.
+
+### Changed
+- **Compatibility:** `getImages()` lists referenced mask streams in addition
+  to the images reachable from page resources (0.3.0 listed only the
+  latter). **Migration:** pictures only:
+  `images.filter((i) => i.masks.softMaskOf.length === 0 && i.masks.maskOf.length === 0)`.
+  0.2.0 callers that filter by `filter === '/DCTDecode'` are unaffected
+  (masks are raw or Flate).
+
+### Known limitations
+- `pages` and `directPages` are reachability facts: a page's resources may be
+  inherited from the page tree and shared between pages, so `pages` can be a
+  superset of the pages that actually paint the image. Painted images per
+  page (paint order) are not reported yet.
+- JPEG pixel values from `toRgbaImage` are "as this browser decodes the JPEG"
+  (colour management and chroma upsampling differ between browsers).
+
+## 0.3.0
 
 Additive: every 0.2.0 field of `ImageInfo` keeps its type and value. Check
 the two entries under "Changed" (stencil masks are now listed; the catalog
