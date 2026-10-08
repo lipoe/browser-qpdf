@@ -206,9 +206,14 @@ function prefixKeys(prefix, object) {
  * @returns Array<[fileName, { userPassword, ownerPassword, requiresPassword }]>
  */
 export function scenarioCases(manifest) {
+    // The scenarios compare every fixture with manifest.source; fixtures
+    // derived from another source are tested elsewhere.
+    const fromSharedSource = Object.entries(manifest.fixtures).filter(
+        ([, fixture]) => (fixture.source ?? manifest.source) === manifest.source
+    );
     return [
         [manifest.source, { userPassword: '', requiresPassword: false }],
-        ...Object.entries(manifest.fixtures),
+        ...fromSharedSource,
     ].map(([file, fixture]) => [file, { ...fixture, ownerPassword: manifest.ownerPassword }]);
 }
 

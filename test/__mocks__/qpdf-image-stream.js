@@ -13,11 +13,13 @@ export const mockWasm = {
     getImages: null,
     getImageStreamData: null,
     getRawImageStreamData: null,
+    readImage: null,
     replaceImageStream: null,
     isEncrypted: null,
     writePdf: null,
     close: null,
     getPageCount: null,
+    getPageInfo: null,
     delete: null,
 };
 
@@ -41,6 +43,14 @@ class MockQpdfWasmWrapper {
     getRawImageStreamData(objId, gen) {
         if (mockWasm.getRawImageStreamData) return mockWasm.getRawImageStreamData(objId, gen);
         return new Uint8Array(0);
+    }
+    readImage(objId, gen) {
+        if (mockWasm.readImage) return mockWasm.readImage(objId, gen);
+        return { data: new Uint8Array(0), encoding: { kind: 'samples' } };
+    }
+    getPageInfo(index) {
+        if (mockWasm.getPageInfo) return mockWasm.getPageInfo(index);
+        return { index, mediaBox: { x: 0, y: 0, width: 1, height: 1 }, rotate: 0 };
     }
     replaceImageStream(objId, gen, data, metadata) {
         if (mockWasm.replaceImageStream) return mockWasm.replaceImageStream(objId, gen, data, metadata);

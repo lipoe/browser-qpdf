@@ -15,7 +15,10 @@
  * if the qpdf version differs from QPDF_VERSION (the Debian package repository
  * can change independently of the image). Update both deliberately.
  *
- * Usage: node test/fixtures/generate-encrypted-fixtures.mjs
+ * Fixtures may name their own `source`; the default is multi-image.pdf.
+ *
+ * Usage: node test/fixtures/generate-encrypted-fixtures.mjs [--only <file>]
+ *   --only  generate just that fixture (the manifest is always written in full)
  */
 
 import { execFileSync } from 'node:child_process';
@@ -73,7 +76,20 @@ const FIXTURES = [
         algorithm: 'AES-128',
         userPassword: '',
     },
+    // A Flate + DCT chain under encryption: exercises readImage's scratch path
+    // on decrypted raw bytes. Not part of the encryption scenarios (different source).
+    {
+        file: 'aes256-jpeg-chain.pdf',
+        source: 'flate-dct-chain.pdf',
+        encrypt: [USER_PASSWORD, OWNER_PASSWORD, '256'],
+        algorithm: 'AES-256',
+        userPassword: USER_PASSWORD,
+    },
 ];
+
+const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
+const TO_GENERATE = only ? FIXTURES.filter((f) => f.file === only) : FIXTURES;
+if (only && TO_GENERATE.length === 0) throw new Error(`unknown fixture: ${only}`);
 
 function hasLocalQpdf() {
     try {
@@ -92,7 +108,7 @@ function qpdfArgs(fixture) {
         '--encrypt',
         ...fixture.encrypt,
         '--',
-        SOURCE,
+        fixture.source ?? SOURCE,
         fixture.file,
     ];
 }
@@ -118,7 +134,7 @@ function generate() {
     if (hasLocalQpdf()) {
         qpdfVersion = firstLine(execFileSync('qpdf', ['--version'], { encoding: 'utf8' }));
         if (qpdfVersion !== QPDF_VERSION) throw versionMismatch(qpdfVersion);
-        for (const fixture of FIXTURES) {
+        for (const fixture of TO_GENERATE) {
             execFileSync('qpdf', qpdfArgs(fixture), { cwd: FIXTURES_DIR, stdio: 'inherit' });
         }
     } else {
@@ -128,7 +144,7 @@ function generate() {
             'apt-get install -y -qq qpdf >/dev/null',
             'qpdf --version | head -n 1',
             `test "$(qpdf --version | head -n 1)" = ${shellQuote(QPDF_VERSION)}`,
-            ...FIXTURES.map((f) => ['qpdf', ...qpdfArgs(f)].map(shellQuote).join(' ')),
+            ...TO_GENERATE.map((f) => ['qpdf', ...qpdfArgs(f)].map(shellQuote).join(' ')),
         ];
         let output;
         try {
@@ -156,6 +172,7 @@ function generate() {
             FIXTURES.map((f) => [
                 f.file,
                 {
+                    source: f.source ?? SOURCE,
                     algorithm: f.algorithm,
                     userPassword: f.userPassword,
                     requiresPassword: f.userPassword !== '',
@@ -167,7 +184,7 @@ function generate() {
         `${FIXTURES_DIR}/encrypted-manifest.json`,
         JSON.stringify(manifest, null, 2) + '\n'
     );
-    console.log(`Generated ${FIXTURES.length} encrypted fixtures with ${manifest.generator}`);
+    console.log(`Generated ${TO_GENERATE.length} encrypted fixture(s) with ${manifest.generator}`);
 }
 
 generate();

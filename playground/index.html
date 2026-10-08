@@ -176,7 +176,12 @@
                         <th scope="col">BPC</th>
                         <th scope="col">Color Space</th>
                         <th scope="col">Filter</th>
+                        <th scope="col">Family</th>
+                        <th scope="col">Filters</th>
+                        <th scope="col">Pages</th>
+                        <th scope="col">Masks</th>
                         <th scope="col">Stream Length</th>
+                        <th scope="col">Render</th>
                     </tr>
                 </thead>
                 <tbody id="images-tbody"></tbody>
@@ -206,6 +211,7 @@
         // --- State ---
         let pdfDoc = null;
         let qpdf = null;
+        let codecs = null;
 
         // --- Status helpers ---
         function showStatus(message, type) {
@@ -231,6 +237,7 @@
 
         try {
             const { createQpdfImageStreams } = await import('../dist/index.js');
+            codecs = await import('../dist/codecs/index.js');
 
             qpdf = await createQpdfImageStreams({
                 locateFile: (name) => `../dist/${name}`
@@ -309,14 +316,52 @@
                     <td>${img.bitsPerComponent ?? '<em>null</em>'}</td>
                     <td>${img.colorSpace ?? '<em>null</em>'}</td>
                     <td>${img.filter ?? '<em>null</em>'}</td>
+                    <td>${img.colorSpaceInfo?.family ?? '<em>null</em>'}</td>
+                    <td>${img.filters.join(' → ') || '<em>none</em>'}</td>
+                    <td>${img.pages.join(', ')}</td>
+                    <td>${describeMasks(img.masks)}</td>
                     <td>${img.streamLength.toLocaleString()} bytes</td>
+                    <td></td>
                 `;
+                const renderCell = row.lastElementChild;
+                const renderBtn = document.createElement('button');
+                renderBtn.textContent = 'Render';
+                renderBtn.addEventListener('click', () => renderImage(img, renderCell));
+                renderCell.appendChild(renderBtn);
                 imagesTbody.appendChild(row);
             }
 
             imagesSection.classList.remove('hidden');
             downloadBtn.disabled = false;
             replaceDummyBtn.disabled = images.length === 0;
+        }
+
+        function describeMasks(m) {
+            const parts = [];
+            if (m.isStencilMask) parts.push('stencil');
+            if (m.softMask) parts.push(`SMask → ${m.softMask.objId}`);
+            if (m.mask) parts.push(m.mask.kind === 'stencil' ? `Mask → ${m.mask.ref.objId}` : 'colour key');
+            if (m.softMaskOf.length) parts.push(`soft mask of ${m.softMaskOf.map((r) => r.objId).join(', ')}`);
+            if (m.maskOf.length) parts.push(`mask of ${m.maskOf.map((r) => r.objId).join(', ')}`);
+            return parts.join('; ') || '<em>none</em>';
+        }
+
+        /**
+         * Codec module: readImage -> toImageBitmap -> canvas in the table cell.
+         * Bytes are read only here, on request: the table itself shows facts
+         * from getImages() and never decodes anything.
+         */
+        async function renderImage(img, cell) {
+            const read = pdfDoc.readImage(img.objId, img.generation);
+            if (!read.ok) { cell.textContent = read.code; return; }
+            const bitmap = await codecs.toImageBitmap(read.value, img, { resizeWidth: 96 });
+            if (!bitmap.ok) { cell.textContent = `${read.value.encoding.kind}: ${bitmap.code}`; return; }
+            const canvas = document.createElement('canvas');
+            canvas.width = bitmap.value.width;
+            canvas.height = bitmap.value.height;
+            canvas.getContext('2d').drawImage(bitmap.value, 0, 0);
+            bitmap.value.close();
+            cell.replaceChildren(canvas);
         }
 
         // --- File input handler ---

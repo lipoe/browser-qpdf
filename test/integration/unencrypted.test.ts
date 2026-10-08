@@ -14,16 +14,82 @@ import {
     type ImageInfo,
 } from '../../src/index.js';
 import { containsEncryptDict } from '../scenarios/encryption-scenarios.mjs';
-import { loadFixture, pageCount, readJson, unwrap } from './helpers.js';
+import { filterFactsAsWritten, loadFixture, pageCount, readJson, unwrap } from './helpers.js';
 
+/**
+ * One image as recorded in manifest.json: the ImageInfo fields (without
+ * object location) plus the stream lengths. `colorSpaceInfo.lookup` is a
+ * plain number array in JSON and becomes a Uint8Array for comparison.
+ */
 interface ExpectedImage {
     width: number;
     height: number;
     bitsPerComponent: number | null;
     colorSpace: string | null;
     filter: string | null;
-    decodedStreamLength: number;
+    colorSpaceInfo: unknown;
+    filters: string[];
+    decode: number[] | null;
+    masks: unknown;
+    pages: number[];
+    directPages: number[];
+    /** null: getImageStreamData() fails for this image (see manifest "conventions") */
+    decodedStreamLength: number | null;
     rawStreamLength: number | null;
+    /** ImageInfo.encoding: what the filter chain declares (null: chain not describable) */
+    encoding: unknown;
+    /** readImage(): data byte length after container filters are removed; null when the call fails */
+    encodedLength: number | null;
+}
+
+interface ExpectedPage {
+    index: number;
+    mediaBox: { x: number; y: number; width: number; height: number };
+    rotate: number | null;
+}
+
+/**
+ * Deep copy of a JSON-like value where `replace(key, value)` may substitute
+ * any node (return `undefined` to keep walking into it). Uint8Arrays are
+ * leaves. Shared by the manifest conversion and the reference masking below.
+ */
+function deepMap(value: unknown, replace: (key: string | null, value: unknown) => unknown, key: string | null = null): unknown {
+    const replaced = replace(key, value);
+    if (replaced !== undefined) return replaced;
+    if (value instanceof Uint8Array) return value;
+    if (Array.isArray(value)) return value.map((item) => deepMap(item, replace, null));
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value).map(([k, inner]) => [k, deepMap(inner, replace, k)]));
+    }
+    return value;
+}
+
+/** Deep copy with every `lookup: number[]` turned into a Uint8Array (JSON cannot hold typed arrays). */
+function withLookupBytes(value: unknown): unknown {
+    return deepMap(value, (key, node) =>
+        key === 'lookup' && Array.isArray(node) ? Uint8Array.from(node as number[]) : undefined
+    );
+}
+
+/** The ImageInfo an expected manifest entry describes (object location is checked separately). */
+function expectedInfo(expected: ExpectedImage) {
+    return {
+        objId: expect.any(Number),
+        generation: 0,
+        width: expected.width,
+        height: expected.height,
+        bitsPerComponent: expected.bitsPerComponent,
+        colorSpace: expected.colorSpace,
+        filter: expected.filter,
+        streamLength: expected.rawStreamLength ?? expect.any(Number),
+        colorSpaceInfo: withLookupBytes(expected.colorSpaceInfo),
+        filters: expected.filters,
+        decode: expected.decode,
+        encoding: expected.encoding,
+        masks: expected.masks,
+        pages: expected.pages,
+        directPages: expected.directPages,
+    };
 }
 
 interface FixtureManifest {
@@ -31,6 +97,7 @@ interface FixtureManifest {
         string,
         {
             pageCount: number;
+            pageInfos: ExpectedPage[];
             expectedImages: ExpectedImage[] | { recursive_false: ExpectedImage[]; recursive_true: ExpectedImage[] };
         }
     >;
@@ -46,18 +113,49 @@ function expectedImagesOf(name: string, recursive: boolean): ExpectedImage[] {
 }
 
 
-/** Image metadata without object location and encoded length (both change when writing). */
-function withoutLocation(info: ImageInfo) {
-    const { objId: _objId, generation: _generation, streamLength: _streamLength, ...shape } = info;
-    return shape;
+/** An {objId, generation} object (ObjRef). */
+function isObjRef(value: unknown): boolean {
+    return (
+        !!value &&
+        typeof value === 'object' &&
+        Object.keys(value).length === 2 &&
+        typeof (value as { objId?: unknown }).objId === 'number' &&
+        typeof (value as { generation?: unknown }).generation === 'number'
+    );
 }
 
 /**
- * Expected metadata after writePdf(): QPDFWriter renumbers objects and
- * compresses previously unfiltered streams with FlateDecode (qpdf default).
+ * Deep copy with every object reference masked: ObjRef objects become 'REF'
+ * and "n 0 R" inside strings becomes "N 0 R". QPDFWriter renumbers objects,
+ * so these are the only parts of an ImageInfo that may legitimately differ
+ * between a document and its written copy.
  */
+function maskRefs(value: unknown): unknown {
+    return deepMap(value, (_key, node) => {
+        if (typeof node === 'string') return node.replace(/\b\d+ 0 R\b/g, 'N 0 R');
+        if (isObjRef(node)) return 'REF';
+        return undefined;
+    });
+}
+
+/**
+ * Image facts without object location and encoded length (both change when
+ * writing) and with object references masked (see maskRefs).
+ */
+function withoutLocation(info: ImageInfo) {
+    const { objId: _objId, generation: _generation, streamLength: _streamLength, ...shape } = info;
+    return maskRefs(shape) as Omit<ImageInfo, 'objId' | 'generation' | 'streamLength'>;
+}
+
+/** Expected facts after writePdf(): objects renumbered (masked), filters as the writer leaves them. */
 function writtenShape(info: ImageInfo) {
-    return { ...withoutLocation(info), filter: info.filter ?? '/FlateDecode' };
+    return { ...withoutLocation(info), ...filterFactsAsWritten(info) };
+}
+
+/** Decoded stream data, or null when qpdf cannot decode the chain (the manifest records which). */
+function decodedOrNull(doc: PdfDocument, info: ImageInfo): Uint8Array | null {
+    const result = doc.getImageStreamData(info.objId, info.generation);
+    return result.ok ? result.value : null;
 }
 
 function imagesOf(doc: PdfDocument, recursive = false): ImageInfo[] {
@@ -88,30 +186,59 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             const expected = expectedImagesOf(name, recursive);
 
             expect(images).toHaveLength(expected.length);
-            images.forEach((info, i) => {
-                expect(info).toEqual({
-                    objId: expect.any(Number),
-                    generation: 0,
-                    width: expected[i].width,
-                    height: expected[i].height,
-                    bitsPerComponent: expected[i].bitsPerComponent,
-                    colorSpace: expected[i].colorSpace,
-                    filter: expected[i].filter,
-                    streamLength: expected[i].rawStreamLength ?? expect.any(Number),
-                });
+            images.forEach((info, i) => expect(info).toEqual(expectedInfo(expected[i])));
+            // the catalog is in ascending object order, independent of traversal
+            const order = images.map((info) => [info.objId, info.generation] as const);
+            expect(order).toEqual([...order].sort((a, b) => a[0] - b[0] || a[1] - b[1]));
+            doc.close();
+        });
+
+        it('returns decoded and raw stream data with the expected lengths (or fails to decode, never returning undecoded bytes)', () => {
+            const doc = open(name);
+            const expected = expectedImagesOf(name, true);
+            imagesOf(doc, true).forEach((info, i) => {
+                const decoded = doc.getImageStreamData(info.objId, info.generation);
+                const raw = unwrap(doc.getRawImageStreamData(info.objId, info.generation));
+                if (expected[i].decodedStreamLength === null) {
+                    expect(decoded).toMatchObject({ ok: false, code: 'UNKNOWN' });
+                } else {
+                    expect(unwrap(decoded).byteLength).toBe(expected[i].decodedStreamLength);
+                }
+                expect(raw.byteLength).toBe(expected[i].rawStreamLength ?? info.streamLength);
             });
             doc.close();
         });
 
-        it('returns decoded and raw stream data with the expected lengths', () => {
+        it('readImage() returns the bytes in their stored encoding and names the encoding (or fails, never returning partial bytes)', () => {
             const doc = open(name);
             const expected = expectedImagesOf(name, true);
             imagesOf(doc, true).forEach((info, i) => {
-                const decoded = unwrap(doc.getImageStreamData(info.objId, info.generation));
-                const raw = unwrap(doc.getRawImageStreamData(info.objId, info.generation));
-                expect(decoded.byteLength).toBe(expected[i].decodedStreamLength);
-                expect(raw.byteLength).toBe(expected[i].rawStreamLength ?? info.streamLength);
+                const read = doc.readImage(info.objId, info.generation);
+                if (expected[i].encodedLength === null) {
+                    expect(read).toMatchObject({ ok: false, code: 'UNKNOWN' });
+                    return;
+                }
+                const image = unwrap(read);
+                // readImage reports the encoding the catalog declared (one rule in the wrapper)
+                expect(image.encoding).toEqual(info.encoding);
+                expect(image.data.byteLength).toBe(expected[i].encodedLength);
+                if (image.encoding.kind === 'jpeg') expect([image.data[0], image.data[1]]).toEqual([0xff, 0xd8]);
+                if (image.encoding.kind === 'samples') {
+                    // samples are what the frozen route decodes to as well
+                    expect(image.data).toEqual(unwrap(doc.getImageStreamData(info.objId, info.generation)));
+                }
             });
+            doc.close();
+        });
+
+        it('getPageCount() and getPageInfo() match the manifest; the index is validated', () => {
+            const doc = open(name);
+            const { pageCount: count, pageInfos } = manifest.fixtures[name];
+            expect(doc.getPageCount()).toEqual({ ok: true, value: count });
+            pageInfos.forEach((page, i) => expect(doc.getPageInfo(i)).toEqual({ ok: true, value: page }));
+            expect(doc.getPageInfo(count)).toMatchObject({ ok: false, code: 'INVALID_INPUT' });
+            expect(doc.getPageInfo(-1)).toEqual({ ok: false, code: 'INVALID_INPUT', error: 'Invalid page index' });
+            expect(doc.getPageInfo(1.5)).toEqual({ ok: false, code: 'INVALID_INPUT', error: 'Invalid page index' });
             doc.close();
         });
 
@@ -119,8 +246,11 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             const doc = open(name);
             const before = imagesOf(doc, true).map((info) => ({
                 info,
-                decoded: unwrap(doc.getImageStreamData(info.objId, info.generation)),
+                decoded: decodedOrNull(doc, info),
             }));
+            // readImage() works in a scratch document; it must leave no trace in what is written
+            before.forEach(({ info }) => doc.readImage(info.objId, info.generation));
+            expect(imagesOf(doc, true)).toEqual(before.map((b) => b.info));
             const written = unwrap(doc.writePdf());
             doc.close();
 
@@ -130,9 +260,7 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             const reloaded = unwrap(api.loadPdf(written));
             const after = imagesOf(reloaded, true);
             expect(after.map(withoutLocation)).toEqual(before.map((b) => writtenShape(b.info)));
-            after.forEach((info, i) =>
-                expect(unwrap(reloaded.getImageStreamData(info.objId, info.generation))).toEqual(before[i].decoded)
-            );
+            after.forEach((info, i) => expect(decodedOrNull(reloaded, info)).toEqual(before[i].decoded));
             reloaded.close();
         });
     });
@@ -156,7 +284,13 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             doc.close();
             const [firstAfter, ...othersAfter] = imagesOf(reloaded);
             expect(withoutLocation(firstAfter)).toEqual(
-                writtenShape({ ...first, width: 2, height: 2, colorSpace: '/DeviceGray' })
+                writtenShape({
+                    ...first,
+                    width: 2,
+                    height: 2,
+                    colorSpace: '/DeviceGray',
+                    colorSpaceInfo: { family: 'DeviceGray', components: 1, raw: '/DeviceGray' },
+                })
             );
             expect(unwrap(reloaded.getImageStreamData(firstAfter.objId, firstAfter.generation))).toEqual(replacement);
             expect(othersAfter.map(withoutLocation)).toEqual(others.map(writtenShape));
@@ -292,6 +426,7 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             const doc = open('multi-image.pdf');
             expect(doc.getImageStreamData(99, 0)).toEqual({ ok: false, code: 'INVALID_INPUT', error: 'Object 99 0 is not a stream' });
             expect(doc.getRawImageStreamData(99, 0)).toEqual({ ok: false, code: 'INVALID_INPUT', error: 'Object 99 0 is not a stream' });
+            expect(doc.readImage(99, 0)).toEqual({ ok: false, code: 'INVALID_INPUT', error: 'Object 99 0 is not a stream' });
             expect(doc.getImageStreamData(1, 0)).toEqual({ ok: false, code: 'INVALID_INPUT', error: 'Object 1 0 is not a stream' });
             expect(doc.replaceImageStream(99, 0, new Uint8Array(1))).toEqual({
                 ok: false,
@@ -321,6 +456,9 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             expect(doc.getImages()).toEqual(disposed);
             expect(doc.getImageStreamData(7, 0)).toEqual(disposed);
             expect(doc.getRawImageStreamData(7, 0)).toEqual(disposed);
+            expect(doc.readImage(7, 0)).toEqual(disposed);
+            expect(doc.getPageCount()).toEqual(disposed);
+            expect(doc.getPageInfo(0)).toEqual(disposed);
             expect(doc.replaceImageStream(7, 0, new Uint8Array(1))).toEqual(disposed);
             expect(doc.writePdf()).toEqual(disposed);
         });

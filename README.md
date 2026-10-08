@@ -8,8 +8,15 @@ Browser-compatible WASM module exposing qpdf's library API for reading and repla
 - Encrypted PDFs: RC4 40/128-bit, AES-128 and AES-256; owner-password-only PDFs load without password
 - Decrypt PDFs (`writePdf({ preserveEncryption: false })`)
 - Machine-readable error codes (`PASSWORD_REQUIRED`, `INVALID_PASSWORD`, ...)
-- Enumerate image XObjects with full metadata (dimensions, color space, filter, stream length)
-- Read decoded or raw image stream data
+- Catalog of all image XObjects with the facts of the PDF object graph: dimensions,
+  structured colour space (references resolved), filter chain, masks in both
+  directions, pages each image appears on
+- Read any image in its stored encoding (`readImage`): container compression removed,
+  the image codec named (`samples`, `jpeg`, `jpeg2000`, `ccitt`, `jbig2`)
+- Page facts (`getPageCount`, `getPageInfo`: MediaBox, rotation)
+- Codec module `@lipoe/browser-qpdf/codecs`: raw samples and JPEG to pixels
+  (`decodeSamples`, `applySoftMask`, `toImageBitmap`)
+- Read decoded or raw image stream data (0.1.0 routes, unchanged)
 - Replace image streams with new content and metadata
 - Write modified PDFs back to `Uint8Array`
 - No filesystem dependencies — works in browsers, web workers and Node >= 18 (random data comes from `crypto.getRandomValues`)
@@ -78,8 +85,12 @@ if (result.ok) {
         }
     }
 
-    // Read decoded image stream data
-    const streamData = doc.getImageStreamData(images.value[0].objId, images.value[0].generation);
+    // Read an image in its stored encoding (container compression removed, codec named)
+    const read = doc.readImage(images.value[0].objId, images.value[0].generation);
+    if (read.ok) {
+        // read.value.encoding.kind: 'samples' | 'jpeg' | 'jpeg2000' | 'ccitt' | 'jbig2'
+        // read.value.data: the bytes in that encoding
+    }
 
     // Replace an image stream
     doc.replaceImageStream(objId, generation, newImageData, {
@@ -99,6 +110,51 @@ if (result.ok) {
     doc.close();
 }
 ```
+
+### From facts to pixels: the codec module
+
+The core reports facts and hands out bytes in their stored encoding. Turning
+them into pixels is the job of the codec module, a separate entry point that
+depends on the core by types only:
+
+```typescript
+import { createQpdfImageStreams } from '@lipoe/browser-qpdf';
+import { canDecode, toImageBitmap } from '@lipoe/browser-qpdf/codecs';
+
+const images = doc.getImages({ recursive: true });
+for (const info of images.ok ? images.value : []) {
+    if (info.masks.isStencilMask || info.masks.softMaskOf.length > 0) continue; // a caller's rule, not the library's
+    if (!canDecode(info).ok) continue;                                        // decided from facts, no bytes read
+    const read = doc.readImage(info.objId, info.generation);
+    if (!read.ok) continue;
+    // Browser: resize while decoding, so no full-size bitmap is ever kept
+    const bitmap = await toImageBitmap(read.value, info, { resizeWidth: 300 });
+    if (bitmap.ok) show(bitmap.value);
+    else console.log(bitmap.code); // e.g. 'UNSUPPORTED_ENCODING' for JPX in this version
+}
+```
+
+What you get per image kind (ISO 32000-1 §8.9):
+
+| Image kind in the PDF | `getImages()` facts | `readImage()` bytes | `/codecs` (stage A) |
+|---|---|---|---|
+| Device colour spaces, 1 to 16 bpc, unfiltered or Flate/LZW/RunLength/ASCII | `colorSpaceInfo`, `bitsPerComponent`, `decode` | `encoding.kind: 'samples'` | `decodeSamples` -> RGBA |
+| ICCBased | `components` (`/N`), `iccProfile` reference | samples | mapped by component count (no colour management) |
+| Indexed | `base`, `hival`, `lookup` bytes | samples (indices) | `decodeSamples` |
+| Separation, DeviceN, Lab, Cal* | `names`, `alternate`, `components` | samples | `UNSUPPORTED_COLOR_SPACE` (tint transforms and Lab ranges are not facts the library has yet) |
+| DCTDecode (JPEG) | `filters` | `encoding.kind: 'jpeg'`, a complete JPEG file | `toImageBitmap` (browser decoder) |
+| JPXDecode | `filters`, `masks.softMaskInData` | `encoding.kind: 'jpeg2000'` | `UNSUPPORTED_ENCODING` |
+| CCITTFaxDecode, JBIG2Decode | `filters` | `encoding.kind: 'ccitt'` with its parameters, `'jbig2'` with its globals reference | `UNSUPPORTED_ENCODING` |
+| Stencil masks (`/ImageMask true`) | `masks.isStencilMask`, `decode` | 1-bit samples | coverage (RGB 0, alpha); the fill colour is in the page content, not in the image |
+| Soft masks, stencil `/Mask`, colour-key `/Mask` | `masks.softMask`, `masks.mask`, `masks.softMaskOf`, `masks.maskOf` | the mask stream through the same methods | `applySoftMask` |
+
+Three ways to read bytes, three different results:
+
+| Method | Result | Defined by |
+|---|---|---|
+| `getRawImageStreamData` | the stream bytes as stored (still compressed) | the PDF |
+| `readImage` | container compression removed, codec untouched and named | the PDF (ISO 32000 table 6) |
+| `getImageStreamData` | everything the qpdf build can decode, including JPEG via libjpeg; fails on anything else | the qpdf build; frozen 0.1.0 route |
 
 ### Password-protected PDFs
 
@@ -236,6 +292,13 @@ The encryption behavior is described by one expectation table
 tests share. Encrypted fixtures are generated from `multi-image.pdf` with the
 qpdf CLI (local or via Docker): `npm run fixtures:encrypted`.
 
+The catalog facts, `readImage` and the page facts are described by
+`test/fixtures/manifest.json` (one entry per fixture, generated by
+`node test/fixtures/generate-fixtures.mjs`), and the codec module's results by
+`test/fixtures/codec-manifest.json`. Both are checked in Node, in a browser page
+and in a Web Worker through the shared modules in `test/scenarios/`. An
+import-graph test keeps the codec module dependent on the core by types only.
+
 ## API
 
 All load and document operations return a `Result<T>` and never throw (`close()` returns nothing and never throws either). The only exception is the factory `createQpdfImageStreams()`, whose promise rejects if the WASM module cannot be loaded:
@@ -282,20 +345,83 @@ ignored for unencrypted PDFs.
 
 ### `PdfDocument.getImages(options?): Result<ImageInfo[]>`
 
-Enumerate all image XObjects. Pass `{ recursive: true }` to include nested images.
+Enumerate all image XObjects, including stencil masks (`/ImageMask true`),
+in ascending object order. Pass `{ recursive: true }` to include images
+reachable through Form XObjects.
+
+Every `ImageInfo` carries the 0.1.0 fields as written in the stream
+dictionary (`width`, `height`, `bitsPerComponent`, `colorSpace`, `filter`,
+`streamLength`) and, since 0.3.0, structured facts:
+
+- `colorSpaceInfo`: a discriminated union on `family` (`DeviceGray`, `DeviceRGB`,
+  `DeviceCMYK`, `CalGray`, `CalRGB`, `Lab`, `ICCBased`, `Indexed`, `Separation`,
+  `DeviceN`, `Pattern`, `Unknown`) with `components`, the resolved `raw` syntax and
+  per-family facts (`iccProfile`, `base`/`hival`/`lookup`, `names`/`alternate`).
+  Indirect references are resolved before classifying; a colour space in a form
+  the spec does not allow is `Unknown`. `null` when `/ColorSpace` is absent.
+- `filters`: the filter chain as full names without slash, abbreviations expanded
+  (`/Fl` -> `FlateDecode`); `[]` when unfiltered.
+- `decode`: the `/Decode` array, or `null`.
+- `encoding`: what the filter chain declares, read from the dictionary alone
+  (the same object `readImage` returns once the container filters are removed);
+  `null` when the chain has more than one filter after the codec. Lets a caller
+  decide routes and counts without reading a single byte.
+- `masks`: `isStencilMask`, `softMaskInData`, this image's `softMask` and `mask`
+  (`{ kind: 'stencil', ref }` or `{ kind: 'colorKey' }`), and the images in the
+  catalog that use this stream as a mask (`softMaskOf`, `maskOf`).
+- `pages`: 0-based indices of the pages from whose resources the image is reachable
+  within the requested scope; `directPages`: pages whose own resources name it.
+
+The string fields `colorSpace` and `filter` are PDF syntax as qpdf serialises it
+(an indirect reference stays `"6 0 R"`); they are kept for compatibility, prefer
+`colorSpaceInfo` and `filters`. The library reports facts only: no field judges
+an image, and absent keys are `null` unless the spec defines a default.
 
 > **Known limitation:** errors while traversing the pages (e.g. a damaged page
 > tree) are not reported. `getImages()` then returns `ok: true` with the images
 > found up to that point, so the list can be incomplete for damaged PDFs.
-> This behavior is kept for compatibility with 0.1.0.
+> This behavior is kept for compatibility with 0.1.0. Inline images (`BI … EI`
+> in content streams) are not XObjects and are not listed; masks that are not
+> in any resource dictionary are referenced (`softMask`, `mask`) but not listed.
+
+### `PdfDocument.readImage(objId, generation): Result<EncodedImage>`
+
+The image bytes with the container compression (every filter before the first
+image codec of ISO 32000 table 6) removed and the codec left untouched.
+`encoding` says what the bytes are:
+
+| `encoding.kind` | bytes are | standard |
+|---|---|---|
+| `'samples'` | raw samples, rows byte-aligned, components interleaved, 16 bit big-endian; layout in the `ImageInfo` | ISO 32000-1 §8.9.5 |
+| `'jpeg'` | a complete JPEG file | ITU-T T.81 |
+| `'jpeg2000'` | a JPEG 2000 codestream or JP2 file | ISO 15444 |
+| `'ccitt'` | Group 3/4 fax data; `k`, `columns`, `rows`, `blackIs1`, `byteAlign`, `endOfLine`, `endOfBlock` (spec defaults filled in) | ITU-T T.4 / T.6 |
+| `'jbig2'` | JBIG2 embedded stream; `globals` references the globals stream | ITU-T T.88 |
+
+Works for any stream object, so soft masks and ICC profiles can be read the same
+way. Fails with `UNKNOWN` (never with partially decoded bytes) on damaged data,
+unknown filters, or more than one filter after the codec.
 
 ### `PdfDocument.getImageStreamData(objId, generation): Result<Uint8Array>`
 
-Read decoded (decompressed) image stream data.
+Read decoded stream data: every filter the qpdf build can decode is applied
+(including JPEG via libjpeg); the call fails when the chain contains one it
+cannot. Frozen 0.1.0 route; prefer `readImage`.
 
 ### `PdfDocument.getRawImageStreamData(objId, generation): Result<Uint8Array>`
 
 Read raw (compressed) image stream data.
+
+### `PdfDocument.getPageCount(): Result<number>`
+
+### `PdfDocument.getPageInfo(index): Result<PageInfo>`
+
+`{ index, mediaBox: { x, y, width, height }, rotate }` for a 0-based page index
+(`INVALID_INPUT` when out of range). `/MediaBox` and `/Rotate` are inherited
+through the page tree; `rotate` is normalised to `0 | 90 | 180 | 270`, `0` when
+absent (spec default) and `null` when not a multiple of 90. qpdf repairs a
+missing or malformed `/MediaBox` to Letter (612 x 792) while reading the page
+tree; the repaired value is what is reported.
 
 ### `PdfDocument.replaceImageStream(objId, generation, data, metadata?): Result<void>`
 
@@ -328,6 +454,33 @@ unfiltered streams with `FlateDecode`; image pixel data is unchanged.
 ### `PdfDocument.close(): void`
 
 Release all WASM memory. After this call, all other methods return a `DISPOSED` error. Multiple calls are no-ops.
+
+### Codec module: `@lipoe/browser-qpdf/codecs`
+
+Stage A, pure TypeScript, no WASM of its own. Imports only types from the
+core; the core never imports it. Results use the same shape as the core with
+its own codes: `UNSUPPORTED_ENCODING`, `UNSUPPORTED_COLOR_SPACE`,
+`INVALID_INPUT`, `DECODE_FAILED`. Nothing throws.
+
+- `canDecode(info): DecodeSupport`: whether and how this stage would decode the
+  image, decided from the catalog facts alone (`{ ok: true, route: 'samples' | 'jpeg', components }`
+  or the `CodecErrorCode` the decoder would return). The decoders apply exactly
+  this rule, so a count of decodable images needs no bytes.
+- `decodeSamples(image, info): CodecResult<RgbaImage>`: `'samples'` to RGBA for
+  Device colour spaces, ICCBased (by component count, no colour management),
+  Indexed, 1/2/4/8/16 bits per component, `/Decode` arrays; stencil masks become
+  coverage (RGB 0, alpha 255 where the sample paints). Separation, DeviceN, Lab,
+  Cal* and Unknown are refused with `UNSUPPORTED_COLOR_SPACE` rather than
+  approximated.
+- `applySoftMask(image, mask): CodecResult<RgbaImage>`: the decoded mask's red
+  channel becomes the image's alpha (nearest-neighbour resampling).
+- `toImageBitmap(image, info, { resizeWidth?, resizeHeight?, resizeQuality? })`
+  (browser only): `'jpeg'` through the browser's decoder, `'samples'` through
+  `decodeSamples`; resizing happens inside `createImageBitmap`. Other kinds return
+  `UNSUPPORTED_ENCODING` until their codec stage ships. The image's own soft mask
+  is **not** applied (the JPEG route never has pixels to write alpha into); the
+  bitmap is opaque, stencil masks excepted. For transparency decode image and
+  mask with `decodeSamples` and use `applySoftMask`.
 
 ## Releasing
 

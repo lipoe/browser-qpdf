@@ -1,0 +1,391 @@
+{
+  "description": "Expected results of the codec module (stage A) for the fixtures of manifest.json: decodeSamples on the output of readImage, per image in catalog order (getImages({recursive: true})). `pixels` is the full RGBA buffer; `code` the CodecErrorCode when decoding is refused. Fixtures not listed have no decodable image (no images, or codecs outside stage A).",
+  "fixtures": {
+    "simple-one-image.pdf": [
+      {
+        "pixels": [
+          255,
+          0,
+          0,
+          255,
+          0,
+          255,
+          0,
+          255,
+          0,
+          0,
+          255,
+          255,
+          255,
+          255,
+          0,
+          255
+        ]
+      }
+    ],
+    "multi-image.pdf": [
+      {
+        "fill": [
+          170,
+          170,
+          170,
+          255
+        ],
+        "pixelCount": 16
+      },
+      {
+        "fill": [
+          187,
+          187,
+          187,
+          255
+        ],
+        "pixelCount": 4
+      },
+      {
+        "fill": [
+          204,
+          204,
+          204,
+          255
+        ],
+        "pixelCount": 9
+      }
+    ],
+    "nested-forms.pdf": [
+      {
+        "pixels": [
+          255,
+          0,
+          0,
+          255,
+          0,
+          255,
+          0,
+          255,
+          0,
+          0,
+          255,
+          255,
+          255,
+          255,
+          0,
+          255
+        ]
+      },
+      {
+        "fill": [
+          221,
+          221,
+          221,
+          255
+        ],
+        "pixelCount": 9
+      }
+    ],
+    "smask-pair.pdf": [
+      {
+        "pixels": [
+          255,
+          0,
+          0,
+          255,
+          0,
+          255,
+          0,
+          255,
+          0,
+          0,
+          255,
+          255,
+          255,
+          255,
+          0,
+          255
+        ],
+        "withSoftMask": [
+          255,
+          0,
+          0,
+          255,
+          0,
+          255,
+          0,
+          128,
+          0,
+          0,
+          255,
+          64,
+          255,
+          255,
+          0,
+          0
+        ]
+      },
+      {
+        "pixels": [
+          255,
+          255,
+          255,
+          255,
+          128,
+          128,
+          128,
+          255,
+          64,
+          64,
+          64,
+          255,
+          0,
+          0,
+          0,
+          255
+        ]
+      }
+    ],
+    "stencil-mask-pair.pdf": [
+      {
+        "pixels": [
+          255,
+          0,
+          0,
+          255,
+          0,
+          255,
+          0,
+          255,
+          0,
+          0,
+          255,
+          255,
+          255,
+          255,
+          0,
+          255
+        ]
+      },
+      {
+        "pixels": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          255,
+          0,
+          0,
+          0,
+          255,
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    ],
+    "colorkey-mask.pdf": [
+      {
+        "pixels": [
+          255,
+          0,
+          0,
+          255,
+          0,
+          255,
+          0,
+          255,
+          0,
+          0,
+          255,
+          255,
+          255,
+          255,
+          0,
+          255
+        ]
+      }
+    ],
+    "imagemask-decode.pdf": [
+      {
+        "alpha": [
+          255,
+          255,
+          255,
+          255,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          255,
+          255,
+          255,
+          255
+        ]
+      }
+    ],
+    "iccbased-n3-n1.pdf": [
+      {
+        "pixels": [
+          255,
+          0,
+          0,
+          255,
+          0,
+          255,
+          0,
+          255,
+          0,
+          0,
+          255,
+          255,
+          255,
+          255,
+          0,
+          255
+        ]
+      },
+      {
+        "pixels": [
+          0,
+          0,
+          0,
+          255,
+          85,
+          85,
+          85,
+          255,
+          170,
+          170,
+          170,
+          255,
+          255,
+          255,
+          255,
+          255
+        ]
+      }
+    ],
+    "indexed-rgb.pdf": [
+      {
+        "pixels": [
+          255,
+          0,
+          0,
+          255,
+          0,
+          255,
+          0,
+          255,
+          0,
+          0,
+          255,
+          255,
+          255,
+          255,
+          0,
+          255
+        ]
+      },
+      {
+        "pixels": [
+          17,
+          34,
+          51,
+          255,
+          68,
+          85,
+          102,
+          255,
+          68,
+          85,
+          102,
+          255,
+          17,
+          34,
+          51,
+          255
+        ]
+      }
+    ],
+    "separation-devicen.pdf": [
+      {
+        "code": "UNSUPPORTED_COLOR_SPACE"
+      },
+      {
+        "code": "UNSUPPORTED_COLOR_SPACE"
+      }
+    ],
+    "shared-image-3-pages.pdf": [
+      {
+        "pixels": [
+          255,
+          0,
+          0,
+          255,
+          0,
+          255,
+          0,
+          255,
+          0,
+          0,
+          255,
+          255,
+          255,
+          255,
+          0,
+          255
+        ]
+      }
+    ],
+    "filter-abbreviations.pdf": [
+      {
+        "pixels": [
+          255,
+          0,
+          0,
+          255,
+          0,
+          255,
+          0,
+          255,
+          0,
+          0,
+          255,
+          255,
+          255,
+          255,
+          0,
+          255
+        ]
+      }
+    ],
+    "flate-predictor.pdf": [
+      {
+        "pixels": [
+          255,
+          0,
+          0,
+          255,
+          0,
+          255,
+          0,
+          255,
+          0,
+          0,
+          255,
+          255,
+          255,
+          255,
+          0,
+          255
+        ]
+      }
+    ]
+  }
+}

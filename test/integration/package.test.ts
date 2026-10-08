@@ -34,15 +34,30 @@ const CONSUMER_TS = `
 import {
     createQpdfImageStreams,
     ERROR_CODES,
+    type ColorSpaceFamily,
+    type ColorSpaceInfo,
     type CreateOptions,
+    type EncodedImage,
     type ErrorCode,
+    type ImageEncoding,
     type ImageInfo,
+    type ImageMaskInfo,
     type ImageMetadata,
+    type ObjRef,
+    type PageInfo,
     type PdfDocument,
     type QpdfImageStreams,
     type Result,
     type WriteOptions,
 } from '@lipoe/browser-qpdf';
+import { decodeSamples, applySoftMask, type CodecResult, type RgbaImage } from '@lipoe/browser-qpdf/codecs';
+
+function decodeFirst(doc: PdfDocument, info: ImageInfo): CodecResult<RgbaImage> {
+    const read: Result<EncodedImage> = doc.readImage(info.objId, info.generation);
+    if (!read.ok) return { ok: false, code: 'DECODE_FAILED', error: read.error };
+    const rgba = decodeSamples(read.value, info);
+    return rgba.ok ? applySoftMask(rgba.value, rgba.value) : rgba;
+}
 
 const options: CreateOptions = { locateFile: (name) => name };
 const write: WriteOptions = { preserveEncryption: false };
@@ -58,6 +73,21 @@ function describeImage(info: ImageInfo): string {
     const colorSpace: string | null = info.colorSpace;
     const filter: string | null = info.filter;
     return [objId, generation, width, height, bpc, colorSpace, filter, length].join(' ');
+}
+
+/** Uses every 0.3.0 fact type, so a missing or renamed declaration fails to compile. */
+function describeFacts(info: ImageInfo, doc?: PdfDocument): string {
+    const cs: ColorSpaceInfo | null = info.colorSpaceInfo;
+    const family: ColorSpaceFamily | null = cs ? cs.family : null;
+    const lookup: Uint8Array | null = cs && cs.family === 'Indexed' ? cs.lookup : null;
+    const masks: ImageMaskInfo = info.masks;
+    const soft: ObjRef | null = masks.softMask;
+    const pages: number[] = info.pages.concat(info.directPages);
+    const read: Result<EncodedImage> | undefined = doc?.readImage(info.objId, info.generation);
+    const encoding: ImageEncoding | undefined = read && read.ok ? read.value.encoding : undefined;
+    const kind = encoding ? encoding.kind : 'none';
+    const rows = encoding && encoding.kind === 'ccitt' ? encoding.rows : null;
+    return [family, lookup?.length, soft?.objId, pages.length, kind, rows, info.filters.join('+'), info.decode].join(' ');
 }
 
 function codeOf(result: Result<unknown>): ErrorCode | 'OK' {
@@ -77,6 +107,12 @@ export async function decryptPdf(bytes: Uint8Array, password: string): Promise<R
     const encrypted: Result<boolean> = doc.isEncrypted();
     const images = doc.getImages();
     if (images.ok) images.value.map(describeImage);
+    if (images.ok) images.value.map((img) => describeFacts(img, doc));
+    if (images.ok && images.value.length > 0) void decodeFirst(doc, images.value[0]);
+    const pages: Result<number> = doc.getPageCount();
+    const page: Result<PageInfo> = doc.getPageInfo(0);
+    if (page.ok) { const box: { x: number; width: number } = page.value.mediaBox; void box; }
+    void pages;
     void codeOf(encrypted);
     void knownCodes;
     void metadata;
@@ -170,6 +206,11 @@ describe('Published package (npm pack)', () => {
                 'dist/qpdf-image-stream.js',
                 'dist/qpdf-image-stream.wasm',
                 'dist/types.d.ts',
+                // codec module (subpath export ./codecs)
+                ...['browser', 'errors', 'index', 'mask', 'samples', 'support'].flatMap((name) => [
+                    `dist/codecs/${name}.d.ts`,
+                    `dist/codecs/${name}.js`,
+                ]),
                 'package.json',
             ].sort()
         );

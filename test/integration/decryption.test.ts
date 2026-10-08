@@ -11,12 +11,12 @@ import {
     type Result,
 } from '../../src/index.js';
 import { containsEncryptDict } from '../scenarios/encryption-scenarios.mjs';
-import { loadFixture, pageCount, readJson, unwrap } from './helpers.js';
+import { filterFactsAsWritten, loadFixture, pageCount, readJson, unwrap } from './helpers.js';
 
 interface EncryptedManifest {
     source: string;
     ownerPassword: string;
-    fixtures: Record<string, { userPassword: string; requiresPassword: boolean }>;
+    fixtures: Record<string, { source?: string; userPassword: string; requiresPassword: boolean }>;
 }
 
 const manifest = readJson<EncryptedManifest>('encrypted-manifest.json');
@@ -28,17 +28,19 @@ const shape = ({ objId: _o, generation: _g, streamLength: _s, ...rest }: ImageIn
 
 describe('Decrypting PDFs (real WASM)', () => {
     let qpdf: QpdfImageStreams;
-    let sourcePages: number;
-    let sourceImages: ReturnType<typeof shape>[];
 
     beforeAll(async () => {
         qpdf = await createQpdfImageStreams();
-        const source = loadFixture(manifest.source);
-        sourcePages = await pageCount(source);
-        const doc = unwrap(qpdf.loadPdf(source));
-        sourceImages = unwrap(doc.getImages()).map(shape);
-        doc.close();
     });
+
+    /** Pages and image facts of the unencrypted source a fixture was generated from. */
+    async function sourceOf(fixture: { source?: string }) {
+        const bytes = loadFixture(fixture.source ?? manifest.source);
+        const doc = unwrap(qpdf.loadPdf(bytes));
+        const images = unwrap(doc.getImages()).map(shape);
+        doc.close();
+        return { pages: await pageCount(bytes), images };
+    }
 
     /** Decryption as a consumer composes it from the public API. */
     function decryptPdf(bytes: Uint8Array, password: string): Result<Uint8Array> {
@@ -62,15 +64,16 @@ describe('Decrypting PDFs (real WASM)', () => {
             ['user', fixture.userPassword],
             ['owner', manifest.ownerPassword],
         ])('decrypts with the %s password to a plain PDF with identical pages and images', async (_kind, password) => {
+            const source = await sourceOf(fixture);
             const plain = unwrap(decryptPdf(loadFixture(file), password));
 
             expect(containsEncryptDict(plain)).toBe(false);
-            expect(await pageCount(plain)).toBe(sourcePages);
+            expect(await pageCount(plain)).toBe(source.pages);
 
             const reloaded = unwrap(qpdf.loadPdf(plain));
             expect(unwrap(reloaded.isEncrypted())).toBe(false);
             expect(unwrap(reloaded.getImages()).map(shape)).toEqual(
-                sourceImages.map((img) => ({ ...img, filter: img.filter ?? '/FlateDecode' }))
+                source.images.map((img) => ({ ...img, ...filterFactsAsWritten(img) }))
             );
             reloaded.close();
         });
