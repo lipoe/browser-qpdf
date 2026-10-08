@@ -13,9 +13,16 @@ import type { ErrorCode } from './errors.js';
  * On failure, `code` is the stable, machine-readable error category and
  * `error` a human-readable message (wording may change between versions).
  */
-export type Result<T> =
+export type Result<T> = ResultOf<T, ErrorCode>;
+
+/**
+ * The one result shape of this package, parameterised by its code union.
+ * The core uses `Result<T>` (= `ResultOf<T, ErrorCode>`); the codec module
+ * uses it with its own codes, so both share the shape by reference.
+ */
+export type ResultOf<T, Code extends string> =
     | { ok: true; value: T }
-    | { ok: false; code: ErrorCode; error: string };
+    | { ok: false; code: Code; error: string };
 
 /** Reference to a PDF object. */
 export interface ObjRef {

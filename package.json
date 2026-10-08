@@ -1,13 +1,17 @@
 {
   "name": "@lipoe/browser-qpdf",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "license": "Apache-2.0",
-  "description": "Browser-compatible WASM module exposing qpdf's library API for reading and replacing PDF image streams",
+  "description": "Browser-compatible WASM module exposing qpdf's library API for reading PDF image XObjects (facts and encoded bytes) and replacing image streams; codec module for turning them into pixels",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./codecs": {
+      "types": "./dist/codecs/index.d.ts",
+      "import": "./dist/codecs/index.js"
     },
     "./qpdf-image-stream.wasm": "./dist/qpdf-image-stream.wasm"
   },
@@ -17,6 +21,7 @@
     "dist/index.js",
     "dist/index.d.ts",
     "dist/types.d.ts",
+    "dist/codecs/",
     "dist/qpdf-image-stream.js",
     "dist/qpdf-image-stream.wasm",
     "THIRD-PARTY-NOTICES"

@@ -49,6 +49,7 @@ export { ERROR_CODES, type ErrorCode } from './errors.js';
 // Re-export all public types
 export type {
     Result,
+    ResultOf,
     ImageInfo,
     ObjRef,
     ColorSpaceFamily,

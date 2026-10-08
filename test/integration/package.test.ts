@@ -50,6 +50,14 @@ import {
     type Result,
     type WriteOptions,
 } from '@lipoe/browser-qpdf';
+import { decodeSamples, applySoftMask, type CodecResult, type RgbaImage } from '@lipoe/browser-qpdf/codecs';
+
+function decodeFirst(doc: PdfDocument, info: ImageInfo): CodecResult<RgbaImage> {
+    const read: Result<EncodedImage> = doc.readImage(info.objId, info.generation);
+    if (!read.ok) return { ok: false, code: 'DECODE_FAILED', error: read.error };
+    const rgba = decodeSamples(read.value, info);
+    return rgba.ok ? applySoftMask(rgba.value, rgba.value) : rgba;
+}
 
 const options: CreateOptions = { locateFile: (name) => name };
 const write: WriteOptions = { preserveEncryption: false };
@@ -100,6 +108,7 @@ export async function decryptPdf(bytes: Uint8Array, password: string): Promise<R
     const images = doc.getImages();
     if (images.ok) images.value.map(describeImage);
     if (images.ok) images.value.map((img) => describeFacts(img, doc));
+    if (images.ok && images.value.length > 0) void decodeFirst(doc, images.value[0]);
     const pages: Result<number> = doc.getPageCount();
     const page: Result<PageInfo> = doc.getPageInfo(0);
     if (page.ok) { const box: { x: number; width: number } = page.value.mediaBox; void box; }
@@ -197,6 +206,11 @@ describe('Published package (npm pack)', () => {
                 'dist/qpdf-image-stream.js',
                 'dist/qpdf-image-stream.wasm',
                 'dist/types.d.ts',
+                // codec module (subpath export ./codecs)
+                ...['browser', 'errors', 'index', 'mask', 'samples'].flatMap((name) => [
+                    `dist/codecs/${name}.d.ts`,
+                    `dist/codecs/${name}.js`,
+                ]),
                 'package.json',
             ].sort()
         );
