@@ -547,6 +547,96 @@ function generateDamagedFlate() {
 }
 
 // ---------------------------------------------------------------------------
+// Fixtures added for 0.3.1 (masks outside resources, masked JPEG, inherited resources)
+// ---------------------------------------------------------------------------
+
+/** The gray soft mask used by the 0.3.0 smask-pair fixture: alpha 255, 128, 64, 0. */
+const GRAY_MASK_2X2 = Buffer.from([0xFF, 0x80, 0x40, 0x00]);
+const grayMask = (dictEntries, data) =>
+  imageXObject(`/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceGray${dictEntries ? ` ${dictEntries}` : ''}`, data);
+
+/** Picture (5) with /SMask (6); the mask is in no resource dictionary (typical design-tool export). */
+function generateSmaskOutsideResources() {
+  return singlePagePdf(`/XObject << /Im1 ${ref(5)} >>`, drawImage('Im1'), [
+    imageXObject(`/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceRGB /SMask ${ref(6)}`, RGB_2X2),
+    grayMask('', GRAY_MASK_2X2),
+  ]);
+}
+
+/** JPEG picture (5) with a gray /SMask (6) outside resources. */
+function generateSmaskJpeg() {
+  return singlePagePdf(`/XObject << /Im1 ${ref(5)} >>`, drawImage('Im1'), [
+    imageXObject(`/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceGray /Filter /DCTDecode /SMask ${ref(6)}`, createMinimalJpeg()),
+    grayMask('', GRAY_MASK_2X2),
+  ]);
+}
+
+/**
+ * 2x2 picture with a 4x4 mask. Nearest-neighbour resampling to 2x2 samples
+ * the mask at (0,0), (2,0), (0,2), (2,2), which hold 255, 128, 64, 0.
+ */
+function generateSmaskOtherSize() {
+  const mask4x4 = Buffer.from([
+    0xFF, 0x11, 0x80, 0x11,
+    0x11, 0x11, 0x11, 0x11,
+    0x40, 0x11, 0x00, 0x11,
+    0x11, 0x11, 0x11, 0x11,
+  ]);
+  return singlePagePdf(`/XObject << /Im1 ${ref(5)} >>`, drawImage('Im1'), [
+    imageXObject(`/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceRGB /SMask ${ref(6)}`, RGB_2X2),
+    imageXObject('/Width 4 /Height 4 /BitsPerComponent 8 /ColorSpace /DeviceGray', mask4x4),
+  ]);
+}
+
+/** Mask with /Decode [1 0]: stored 0, 127, 191, 255 means alpha 255, 128, 64, 0. */
+function generateSmaskDecodeInverted() {
+  return singlePagePdf(`/XObject << /Im1 ${ref(5)} >>`, drawImage('Im1'), [
+    imageXObject(`/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceRGB /SMask ${ref(6)}`, RGB_2X2),
+    grayMask('/Decode [1 0]', Buffer.from([0x00, 0x7F, 0xBF, 0xFF])),
+  ]);
+}
+
+/** One mask (7) named by two pictures (5, 6). */
+function generateSmaskShared() {
+  return buildPdf([
+    catalog(),
+    pages([3]),
+    page({ contents: 4, resources: `/XObject << /Im1 ${ref(5)} /Im2 ${ref(6)} >>` }),
+    contentStream(`${drawImage('Im1')} ${drawImage('Im2', 200, 600, 50, 50)}`),
+    imageXObject(`/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceRGB /SMask ${ref(7)}`, RGB_2X2),
+    imageXObject(`/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceGray /SMask ${ref(7)}`, Buffer.from([0x00, 0x55, 0xAA, 0xFF])),
+    grayMask('', GRAY_MASK_2X2),
+  ]);
+}
+
+/** /SMask naming a stream that is not an image XObject: the reference is a fact, no catalog entry follows. */
+function generateSmaskNotAnImage() {
+  return singlePagePdf(`/XObject << /Im1 ${ref(5)} >>`, drawImage('Im1'), [
+    imageXObject(`/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceRGB /SMask ${ref(6)}`, RGB_2X2),
+    stream('', opaqueCodecPayload(4, 8)),
+  ]);
+}
+
+/**
+ * Three pages sharing one inherited /Resources that names one image; the
+ * content streams paint it on pages 0 and 2 only. `pages` (reachability)
+ * is [0, 1, 2]; a painted-images fact (0.4) would say [0, 2].
+ */
+function generateInheritedResources3Pages() {
+  return buildPdf([
+    catalog(),
+    pages([3, 4, 5], `/Resources << /XObject << /Im1 ${ref(7)} >> /Font << /F1 ${ref(8)} >> >>`),
+    page({ contents: 6 }),
+    page({ contents: 9 }),
+    page({ contents: 6 }),
+    contentStream(drawImage('Im1')),
+    imageXObject('/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceRGB', RGB_2X2),
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    contentStream(drawText()),
+  ]);
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -582,6 +672,14 @@ const fixtures = [
   { name: 'flate-predictor-dct.pdf', generate: generateFlatePredictorDct },
   { name: 'unknown-filter.pdf', generate: generateUnknownFilter },
   { name: 'damaged-flate.pdf', generate: generateDamagedFlate },
+  // 0.3.1
+  { name: 'smask-outside-resources.pdf', generate: generateSmaskOutsideResources },
+  { name: 'smask-jpeg.pdf', generate: generateSmaskJpeg },
+  { name: 'smask-other-size.pdf', generate: generateSmaskOtherSize },
+  { name: 'smask-decode-inverted.pdf', generate: generateSmaskDecodeInverted },
+  { name: 'smask-shared.pdf', generate: generateSmaskShared },
+  { name: 'smask-not-an-image.pdf', generate: generateSmaskNotAnImage },
+  { name: 'inherited-resources-3-pages.pdf', generate: generateInheritedResources3Pages },
 ];
 
 for (const fixture of fixtures) {
