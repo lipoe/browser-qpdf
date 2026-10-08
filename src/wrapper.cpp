@@ -453,9 +453,31 @@ struct CatalogEntry {
 // result order is a property of the catalog, not of the traversal.
 using Catalog = std::map<QPDFObjGen, CatalogEntry>;
 
+// Forward declarations: the encoding facts are shared by the catalog and readImage.
+static size_t codecCut(std::vector<std::string> const& names);
+static QPDFObjectHandle decodeParmsAt(QPDFObjectHandle const& parms, size_t index, size_t chainLength);
+static val encodingOf(std::string const& residual, QPDFObjectHandle const& parms);
+
+// ImageEncoding declared by a stream's filter chain, read from the
+// dictionary alone: the kind after the container filters and the codec's
+// parameters. JS null when the chain has more than one filter after the
+// codec (readImage refuses such a chain). Whether the container filters can
+// actually be applied (unknown names, damaged data) is only known when
+// readImage runs.
+static val declaredEncoding(QPDFObjectHandle const& dict) {
+    std::vector<std::string> names = filterNames(dict);
+    size_t cut = codecCut(names);
+    if (names.size() - cut > 1) {
+        return val::null();
+    }
+    std::string residual = cut < names.size() ? names[cut] : "";
+    return encodingOf(residual, decodeParmsAt(dict.getKey("/DecodeParms"), cut, names.size()));
+}
+
 // Facts read from the image's own stream dictionary (no relations):
 // objId, generation, width, height, bitsPerComponent, colorSpace, filter,
-// streamLength (0.1.0 fields, unchanged) plus colorSpaceInfo, filters, decode.
+// streamLength (0.1.0 fields, unchanged) plus colorSpaceInfo, filters,
+// decode, encoding.
 static val readImageDictionaryFacts(QPDFObjectHandle& image) {
     QPDFObjectHandle dict = image.getDict();
     val info = val::object();
@@ -473,6 +495,7 @@ static val readImageDictionaryFacts(QPDFObjectHandle& image) {
     info.set("colorSpaceInfo", colorSpace.isNull() ? val::null() : colorSpaceInfo(colorSpace));
     info.set("filters", stringArray(filterNames(dict)));
     info.set("decode", numberArrayOrNull(dict.getKey("/Decode")));
+    info.set("encoding", declaredEncoding(dict));
     return info;
 }
 
@@ -807,7 +830,8 @@ public:
             QPDFObjectHandle dict = obj.getDict();
             std::vector<std::string> names = filterNames(dict);
             size_t cut = codecCut(names);
-            if (names.size() - cut > 1) {
+            val encoding = declaredEncoding(dict);  // same rule as the catalog's ImageInfo.encoding
+            if (encoding.isNull()) {
                 return makeError("unsupported filter chain: " + dict.getKey("/Filter").unparse(), "unknown");
             }
 
@@ -826,10 +850,9 @@ public:
             }
             outputBuffer_.assign(buf->getBuffer(), buf->getBuffer() + buf->getSize());
 
-            std::string residual = cut < names.size() ? names[cut] : "";
             val result = val::object();
             result.set("data", val(typed_memory_view(outputBuffer_.size(), outputBuffer_.data())));
-            result.set("encoding", encodingOf(residual, decodeParmsAt(dict.getKey("/DecodeParms"), cut, names.size())));
+            result.set("encoding", encoding);
             return result;
         });
     }

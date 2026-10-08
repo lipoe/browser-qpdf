@@ -119,11 +119,12 @@ depends on the core by types only:
 
 ```typescript
 import { createQpdfImageStreams } from '@lipoe/browser-qpdf';
-import { toImageBitmap, decodeSamples } from '@lipoe/browser-qpdf/codecs';
+import { canDecode, toImageBitmap } from '@lipoe/browser-qpdf/codecs';
 
 const images = doc.getImages({ recursive: true });
 for (const info of images.ok ? images.value : []) {
     if (info.masks.isStencilMask || info.masks.softMaskOf.length > 0) continue; // a caller's rule, not the library's
+    if (!canDecode(info).ok) continue;                                        // decided from facts, no bytes read
     const read = doc.readImage(info.objId, info.generation);
     if (!read.ok) continue;
     // Browser: resize while decoding, so no full-size bitmap is ever kept
@@ -361,6 +362,10 @@ dictionary (`width`, `height`, `bitsPerComponent`, `colorSpace`, `filter`,
 - `filters`: the filter chain as full names without slash, abbreviations expanded
   (`/Fl` -> `FlateDecode`); `[]` when unfiltered.
 - `decode`: the `/Decode` array, or `null`.
+- `encoding`: what the filter chain declares, read from the dictionary alone
+  (the same object `readImage` returns once the container filters are removed);
+  `null` when the chain has more than one filter after the codec. Lets a caller
+  decide routes and counts without reading a single byte.
 - `masks`: `isStencilMask`, `softMaskInData`, this image's `softMask` and `mask`
   (`{ kind: 'stencil', ref }` or `{ kind: 'colorKey' }`), and the images in the
   catalog that use this stream as a mask (`softMaskOf`, `maskOf`).
@@ -457,6 +462,10 @@ core; the core never imports it. Results use the same shape as the core with
 its own codes: `UNSUPPORTED_ENCODING`, `UNSUPPORTED_COLOR_SPACE`,
 `INVALID_INPUT`, `DECODE_FAILED`. Nothing throws.
 
+- `canDecode(info): DecodeSupport`: whether and how this stage would decode the
+  image, decided from the catalog facts alone (`{ ok: true, route: 'samples' | 'jpeg', components }`
+  or the `CodecErrorCode` the decoder would return). The decoders apply exactly
+  this rule, so a count of decodable images needs no bytes.
 - `decodeSamples(image, info): CodecResult<RgbaImage>`: `'samples'` to RGBA for
   Device colour spaces, ICCBased (by component count, no colour management),
   Indexed, 1/2/4/8/16 bits per component, `/Decode` arrays; stencil masks become
@@ -468,7 +477,10 @@ its own codes: `UNSUPPORTED_ENCODING`, `UNSUPPORTED_COLOR_SPACE`,
 - `toImageBitmap(image, info, { resizeWidth?, resizeHeight?, resizeQuality? })`
   (browser only): `'jpeg'` through the browser's decoder, `'samples'` through
   `decodeSamples`; resizing happens inside `createImageBitmap`. Other kinds return
-  `UNSUPPORTED_ENCODING` until their codec stage ships.
+  `UNSUPPORTED_ENCODING` until their codec stage ships. The image's own soft mask
+  is **not** applied (the JPEG route never has pixels to write alpha into); the
+  bitmap is opaque, stencil masks excepted. For transparency decode image and
+  mask with `decodeSamples` and use `applySoftMask`.
 
 ## Releasing
 

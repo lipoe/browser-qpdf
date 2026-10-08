@@ -36,9 +36,9 @@ interface ExpectedImage {
     /** null: getImageStreamData() fails for this image (see manifest "conventions") */
     decodedStreamLength: number | null;
     rawStreamLength: number | null;
-    /** readImage(): encoding facts, or null when the call fails for this image */
+    /** ImageInfo.encoding: what the filter chain declares (null: chain not describable) */
     encoding: unknown;
-    /** readImage(): data byte length after container filters are removed */
+    /** readImage(): data byte length after container filters are removed; null when the call fails */
     encodedLength: number | null;
 }
 
@@ -85,6 +85,7 @@ function expectedInfo(expected: ExpectedImage) {
         colorSpaceInfo: withLookupBytes(expected.colorSpaceInfo),
         filters: expected.filters,
         decode: expected.decode,
+        encoding: expected.encoding,
         masks: expected.masks,
         pages: expected.pages,
         directPages: expected.directPages,
@@ -213,12 +214,13 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             const expected = expectedImagesOf(name, true);
             imagesOf(doc, true).forEach((info, i) => {
                 const read = doc.readImage(info.objId, info.generation);
-                if (expected[i].encoding === null) {
+                if (expected[i].encodedLength === null) {
                     expect(read).toMatchObject({ ok: false, code: 'UNKNOWN' });
                     return;
                 }
                 const image = unwrap(read);
-                expect(image.encoding).toEqual(expected[i].encoding);
+                // readImage reports the encoding the catalog declared (one rule in the wrapper)
+                expect(image.encoding).toEqual(info.encoding);
                 expect(image.data.byteLength).toBe(expected[i].encodedLength);
                 if (image.encoding.kind === 'jpeg') expect([image.data[0], image.data[1]]).toEqual([0xff, 0xd8]);
                 if (image.encoding.kind === 'samples') {

@@ -133,6 +133,15 @@ export interface ImageInfo {
     filters: string[];
     /** /Decode array as written, or null */
     decode: number[] | null;
+    /**
+     * The encoding the filter chain declares, read from the dictionary alone
+     * (no bytes are read): what `readImage()` will report once the container
+     * filters are removed, with the codec's parameters. `null` when the chain
+     * has more than one filter after the codec (readImage refuses it).
+     * Whether the container filters can actually be applied (unknown names,
+     * damaged data) is only known when `readImage()` runs.
+     */
+    encoding: ImageEncoding | null;
     masks: ImageMaskInfo;
     /**
      * 0-based indices of the pages from whose resources this image is

@@ -26,6 +26,7 @@ function info(partial: Partial<ImageInfo>): ImageInfo {
         colorSpaceInfo: RGB,
         filters: [],
         decode: null,
+        encoding: { kind: 'samples' },
         masks: NO_MASKS,
         pages: [0],
         directPages: [0],

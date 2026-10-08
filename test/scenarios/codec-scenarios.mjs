@@ -69,7 +69,7 @@ function expectedPixels(codecEntry, pixelCount) {
 export function expectedBitmaps(entry, codecEntries) {
     const images = Array.isArray(entry.expectedImages) ? entry.expectedImages : entry.expectedImages.recursive_true;
     return images.map((image, i) => {
-        if (image.encoding === null) return { code: 'core:UNKNOWN' };
+        if (image.encodedLength === null) return { code: 'core:UNKNOWN' };
         if (image.encoding.kind === 'jpeg') return { width: image.width, height: image.height };
         if (image.encoding.kind !== 'samples') return { code: 'UNSUPPORTED_ENCODING' };
         const expected = codecEntries?.[i];

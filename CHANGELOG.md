@@ -13,8 +13,10 @@ is sorted by object id).
   and DeviceN names and alternate space), `filters` (filter chain as full
   names, abbreviations expanded), `decode`, `masks` (`isStencilMask`,
   `softMask`, `mask`, `softMaskOf`, `maskOf`, `softMaskInData`), `pages` and
-  `directPages` (0-based page indices). Exported types `ObjRef`,
-  `ColorSpaceFamily`, `ColorSpaceInfo`, `ImageMaskInfo`.
+  `directPages` (0-based page indices), and `encoding` (what the filter
+  chain declares, read from the dictionary alone, so a caller can decide
+  without reading bytes). Exported types `ObjRef`, `ColorSpaceFamily`,
+  `ColorSpaceInfo`, `ImageMaskInfo`.
 - `PdfDocument.readImage(objId, generation): Result<EncodedImage>`: the
   image bytes with the container compression (Flate, LZW, RunLength, ASCII)
   removed and the image codec left untouched; `encoding.kind` names what the
@@ -29,21 +31,27 @@ is sorted by object id).
   reading the page tree; the repaired value is reported. Exported type
   `PageInfo`.
 - Codec module as subpath export `@lipoe/browser-qpdf/codecs` (stage A):
+  `canDecode(info)` (whether and how this stage would decode an image,
+  from the catalog facts alone; the decoders apply the same rule),
   `decodeSamples` (Device colour spaces, ICCBased by component count,
   Indexed, 1 to 16 bits per component, `/Decode`, stencil masks as
   coverage), `applySoftMask`, and the browser adapter `toImageBitmap`
-  (JPEG via the browser, samples via `decodeSamples`). Own error codes
+  (JPEG via the browser, samples via `decodeSamples`; the image's own soft
+  mask is not applied, the bitmap is opaque). Own error codes
   `CodecErrorCode` on the shared result shape; `ResultOf<T, Code>` is
   exported from the core and `Result<T>` is now an alias of it (no change
   for callers). JPX, CCITT and JBIG2 return `UNSUPPORTED_ENCODING` in this
   version; Separation, DeviceN, Lab and Cal* return `UNSUPPORTED_COLOR_SPACE`.
 
 ### Changed
-- `getImages()` lists stencil masks (`/ImageMask true`), which qpdf's
-  `forEachImage` excluded. They have `masks.isStencilMask: true`; to restore
-  the 0.2.0 list use `images.filter((i) => !i.masks.isStencilMask)`.
-- `getImages()` returns the catalog in ascending `(objId, generation)` order
-  instead of qpdf's traversal order. Order by `pages[0]` for page order.
+- **Compatibility:** `getImages()` lists stencil masks (`/ImageMask true`),
+  which qpdf's `forEachImage` excluded in 0.1.0 and 0.2.0. They have
+  `masks.isStencilMask: true`. **Migration:** to restore the 0.2.0 list use
+  `images.filter((i) => !i.masks.isStencilMask)`; code that replaces every
+  listed stream should apply that filter.
+- **Compatibility:** `getImages()` returns the catalog in ascending
+  `(objId, generation)` order instead of qpdf's traversal order.
+  **Migration:** order by `pages[0]` (then `objId`) for page order.
 
 Type-level notes: `ColorSpaceInfo` and `ImageEncoding` are discriminated
 unions; narrow on `family` / `kind` before reading the per-variant fields

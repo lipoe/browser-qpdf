@@ -82,6 +82,13 @@ const imageInfo = fc.record({
     colorSpaceInfo: fc.oneof(fc.constant(null), colorSpaceInfo),
     filters: fc.array(fc.constantFrom('FlateDecode', 'DCTDecode', 'JPXDecode', 'CCITTFaxDecode'), { maxLength: 2 }),
     decode: fc.oneof(fc.constant(null), fc.array(fc.constantFrom(0, 1), { minLength: 2, maxLength: 8 })),
+    encoding: fc.oneof(
+        fc.constant(null),
+        fc.constant({ kind: 'samples' }),
+        fc.constant({ kind: 'jpeg' }),
+        fc.constant({ kind: 'jpeg2000' }),
+        fc.record({ kind: fc.constant('jbig2'), globals: fc.oneof(fc.constant(null), objRef) })
+    ),
     masks: maskInfo,
     pages: sortedPages,
     directPages: sortedPages,

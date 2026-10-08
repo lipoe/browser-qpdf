@@ -22,7 +22,7 @@ const NO_MASKS = { isStencilMask: false, softMaskInData: null, softMask: null, m
 function imageInfo(width: number, height: number, bits: number, cs: ColorSpaceInfo): ImageInfo {
     return {
         objId: 1, generation: 0, width, height, bitsPerComponent: bits, colorSpace: cs.raw, filter: null,
-        streamLength: 0, colorSpaceInfo: cs, filters: [], decode: null, masks: NO_MASKS, pages: [0], directPages: [0],
+        streamLength: 0, colorSpaceInfo: cs, filters: [], decode: null, encoding: { kind: 'samples' }, masks: NO_MASKS, pages: [0], directPages: [0],
     };
 }
 

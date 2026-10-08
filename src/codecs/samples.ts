@@ -5,39 +5,19 @@
  * colour management: device colour spaces are mapped to sRGB directly and
  * ICCBased spaces by component count. Anything that would need a guess
  * beyond that (tint transforms, Lab ranges) is refused with
- * UNSUPPORTED_COLOR_SPACE until the facts exist.
+ * UNSUPPORTED_COLOR_SPACE until the facts exist. Which images are decodable
+ * is decided by `canDecode` (support.ts); this file only does the work.
  */
 
-import type { ColorSpaceInfo, EncodedImage, ImageInfo } from '../types.js';
+import type { EncodedImage, ImageInfo } from '../types.js';
 import { codecFailure, codecGuarded, codecOk, type CodecResult } from './errors.js';
+import { canDecode } from './support.js';
 
 /** ImageData-compatible RGBA buffer (row-major, 4 bytes per pixel). */
 export interface RgbaImage {
     width: number;
     height: number;
     data: Uint8ClampedArray;
-}
-
-const SUPPORTED_BITS = new Set([1, 2, 4, 8, 16]);
-
-/**
- * Component count of a colour space this stage can map to RGB, or null.
- * Device spaces by definition; ICCBased by its declared component count
- * (1, 3 or 4 treated as Gray, RGB, CMYK); Indexed through its base.
- */
-function deviceComponents(cs: ColorSpaceInfo): 1 | 3 | 4 | null {
-    switch (cs.family) {
-        case 'DeviceGray':
-            return 1;
-        case 'DeviceRGB':
-            return 3;
-        case 'DeviceCMYK':
-            return 4;
-        case 'ICCBased':
-            return cs.components === 1 || cs.components === 3 || cs.components === 4 ? cs.components : null;
-        default:
-            return null;
-    }
 }
 
 /** Reads sample `index` (0-based over the whole row) of `bits` bits from a row buffer. */
@@ -85,32 +65,23 @@ function writeDeviceColor(out: Uint8ClampedArray, offset: number, components: 1 
  *   bits per component; `/Decode` arrays honoured.
  * - Stencil masks (`masks.isStencilMask`): RGB 0, alpha 255 where the
  *   sample paints (after `/Decode`), 0 elsewhere. The caller recolours.
- * - Other colour space families: `UNSUPPORTED_COLOR_SPACE`.
+ * - Refusals are exactly those of `canDecode(info)`, plus `INVALID_INPUT`
+ *   when the data is shorter than the facts require.
  */
 export function decodeSamples(image: EncodedImage, info: ImageInfo): CodecResult<RgbaImage> {
     return codecGuarded(() => {
         if (image.encoding.kind !== 'samples') {
             return codecFailure('UNSUPPORTED_ENCODING', `decodeSamples needs raw samples, got ${image.encoding.kind}`);
         }
+        const support = canDecode({ ...info, encoding: image.encoding });
+        if (!support.ok) return support;
         const { width, height } = info;
-        if (!(Number.isInteger(width) && width > 0 && Number.isInteger(height) && height > 0)) {
-            return codecFailure('INVALID_INPUT', `invalid dimensions ${width}x${height}`);
-        }
         if (info.masks.isStencilMask) return decodeStencil(image.data, info);
 
-        const bits = info.bitsPerComponent;
-        if (bits === null || !SUPPORTED_BITS.has(bits)) {
-            return codecFailure('INVALID_INPUT', `unsupported bits per component: ${bits}`);
-        }
-        const cs = info.colorSpaceInfo;
-        if (cs === null) return codecFailure('UNSUPPORTED_COLOR_SPACE', 'image has no /ColorSpace');
-
+        const bits = info.bitsPerComponent as number;
+        const cs = info.colorSpaceInfo!;
         const indexed = cs.family === 'Indexed' ? cs : null;
-        const paint = indexed ? indexed.base : cs;
-        const paintComponents = deviceComponents(paint);
-        if (paintComponents === null) {
-            return codecFailure('UNSUPPORTED_COLOR_SPACE', `cannot map colour space family ${paint.family} to RGB`);
-        }
+        const paintComponents = support.components as 1 | 3 | 4;
         const sampleComponents = indexed ? 1 : paintComponents;
 
         const stride = Math.ceil((width * sampleComponents * bits) / 8);

@@ -59,7 +59,6 @@ export function observeCatalog(api, bytes) {
                       const decoded = doc.getImageStreamData(info.objId, info.generation);
                       return {
                           ...imageFacts(info),
-                          encoding: read.ok ? read.value.encoding : null,
                           encodedLength: read.ok ? read.value.data.byteLength : null,
                           decodedStreamLength: decoded.ok ? decoded.value.byteLength : null,
                       };

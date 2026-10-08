@@ -207,7 +207,7 @@ describe('Published package (npm pack)', () => {
                 'dist/qpdf-image-stream.wasm',
                 'dist/types.d.ts',
                 // codec module (subpath export ./codecs)
-                ...['browser', 'errors', 'index', 'mask', 'samples'].flatMap((name) => [
+                ...['browser', 'errors', 'index', 'mask', 'samples', 'support'].flatMap((name) => [
                     `dist/codecs/${name}.d.ts`,
                     `dist/codecs/${name}.js`,
                 ]),

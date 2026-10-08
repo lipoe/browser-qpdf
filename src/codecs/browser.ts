@@ -6,6 +6,7 @@
 import type { EncodedImage, ImageInfo } from '../types.js';
 import { codecFailure, codecGuardedAsync, codecOk, type CodecResult } from './errors.js';
 import { decodeSamples, type RgbaImage } from './samples.js';
+import { canDecode } from './support.js';
 
 export interface ToImageBitmapOptions {
     /** Target width in pixels; the browser scales (aspect ratio is kept when only one is given). */
@@ -15,11 +16,17 @@ export interface ToImageBitmapOptions {
 }
 
 /**
- * An ImageBitmap for an encoded image.
+ * An ImageBitmap for an encoded image, by the route `canDecode(info)` names:
  *
- * - `jpeg`: the browser's native decoder (`createImageBitmap(Blob)`).
- * - `samples`: `decodeSamples` -> `ImageData` -> `createImageBitmap`.
- * - other kinds: `UNSUPPORTED_ENCODING` until their codec stage ships.
+ * - `'jpeg'`: the browser's native decoder (`createImageBitmap(Blob)`).
+ * - `'samples'`: `decodeSamples` -> `ImageData` -> `createImageBitmap`.
+ * - anything `canDecode` refuses is refused here with the same code.
+ *
+ * The image's own soft mask (`info.masks.softMask`) is **not** applied: it
+ * is a second stream that has to be read and decoded on its own, and the
+ * JPEG route never has pixels to write alpha into. The bitmap is opaque
+ * (except stencil masks, whose alpha is their coverage). To composite,
+ * decode both with `decodeSamples` and use `applySoftMask`.
  *
  * Resizing happens inside `createImageBitmap`, before any full-size bitmap
  * is kept. Never throws; decoder failures are `DECODE_FAILED`.
@@ -33,22 +40,15 @@ export function toImageBitmap(
         if (typeof createImageBitmap !== 'function') {
             return codecFailure('UNSUPPORTED_ENCODING', 'createImageBitmap is not available in this environment');
         }
-        switch (image.encoding.kind) {
-            case 'jpeg': {
-                const blob = new Blob([image.data as BlobPart], { type: 'image/jpeg' });
-                return codecOk(await createImageBitmap(blob, resizeOptions(options)));
-            }
-            case 'samples': {
-                const decoded = decodeSamples(image, info);
-                if (!decoded.ok) return decoded;
-                return codecOk(await createImageBitmap(toImageData(decoded.value), resizeOptions(options)));
-            }
-            default:
-                return codecFailure(
-                    'UNSUPPORTED_ENCODING',
-                    `no decoder for ${image.encoding.kind} in this version of the codec module`
-                );
+        const support = canDecode({ ...info, encoding: image.encoding });
+        if (!support.ok) return support;
+        if (support.route === 'jpeg') {
+            const blob = new Blob([image.data as BlobPart], { type: 'image/jpeg' });
+            return codecOk(await createImageBitmap(blob, resizeOptions(options)));
         }
+        const decoded = decodeSamples(image, info);
+        if (!decoded.ok) return decoded;
+        return codecOk(await createImageBitmap(toImageData(decoded.value), resizeOptions(options)));
     });
 }
 

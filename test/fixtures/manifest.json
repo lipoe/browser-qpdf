@@ -5,7 +5,7 @@
     "rawStreamLength": "byte length of getRawImageStreamData(); null when it depends on the zlib implementation (Flate-encoded payloads)",
     "order": "expectedImages are listed in ascending (objId, generation) order, which is the order getImages() returns (since 0.3.0)",
     "lookup": "colorSpaceInfo.lookup is a plain number array here; the library returns a Uint8Array",
-    "encoding": "readImage(): `encoding` and `encodedLength` (bytes after container filters are removed); encoding null means readImage fails for that image",
+    "encoding": "ImageInfo.encoding as the filter chain declares it (null: more than one filter after the codec); readImage() reports the same object. encodedLength: readImage() data length; null means readImage fails (unknown or damaged container filter, or undescribable chain)",
     "pageInfos": "getPageInfo(i) for every page; a missing /MediaBox is reported as qpdf repairs it (Letter)"
   },
   "fixtures": {
@@ -1792,7 +1792,9 @@
           ],
           "decodedStreamLength": null,
           "rawStreamLength": 12,
-          "encoding": null,
+          "encoding": {
+            "kind": "samples"
+          },
           "encodedLength": null
         }
       ],
@@ -1848,7 +1850,9 @@
           ],
           "decodedStreamLength": null,
           "rawStreamLength": 5,
-          "encoding": null,
+          "encoding": {
+            "kind": "samples"
+          },
           "encodedLength": null
         }
       ],
