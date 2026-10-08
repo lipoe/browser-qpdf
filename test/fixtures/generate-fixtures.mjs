@@ -111,15 +111,22 @@ function page({ contents, resources = '', mediaBox = '[0 0 612 792]', rotate = n
 }
 
 /**
- * Stream object with the given dictionary entries (without /Length, which is added).
- * @param {string} dictEntries - e.g. '/Type /XObject /Subtype /Image ...' ('' for a bare stream)
- * @param {Buffer|string} data
+ * Stream object. The only builder of stream syntax; every stream kind below
+ * is this with a dictionary prefix. /Length is always the last key (the
+ * order the 0.1.0 fixtures were written in, kept for byte-identical
+ * regeneration).
+ * @param {string} dictEntries - dictionary entries without /Length ('' for a bare stream)
+ * @param {Buffer|string} data - stream bytes as stored (already encoded if a /Filter is given)
  * @returns {Buffer}
  */
 function stream(dictEntries, data) {
   const body = Buffer.isBuffer(data) ? data : Buffer.from(data, 'binary');
-  const dict = dictEntries ? `<< /Length ${body.length} ${dictEntries}>>` : `<< /Length ${body.length} >>`;
-  return Buffer.concat([Buffer.from(`${dict}\nstream\n`), body, Buffer.from('\nendstream')]);
+  const entries = dictEntries ? `${dictEntries} ` : '';
+  return Buffer.concat([
+    Buffer.from(`<< ${entries}/Length ${body.length} >>\nstream\n`),
+    body,
+    Buffer.from('\nendstream'),
+  ]);
 }
 
 /** Page or form content stream. */
@@ -129,18 +136,11 @@ function contentStream(text) {
 
 /**
  * Image XObject.
- * @param {string} dictEntries - everything between /Subtype /Image and /Length,
- *   e.g. '/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceRGB'
+ * @param {string} dictEntries - e.g. '/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceRGB'
  * @param {Buffer} data - encoded stream bytes
  */
 function imageXObject(dictEntries, data) {
-  // Key order matters for byte-identical regeneration of the 0.1.0 fixtures:
-  // /Type /Subtype <entries> /Length
-  return Buffer.concat([
-    Buffer.from(`<< /Type /XObject /Subtype /Image ${dictEntries} /Length ${data.length} >>\nstream\n`),
-    data,
-    Buffer.from('\nendstream'),
-  ]);
+  return stream(`/Type /XObject /Subtype /Image ${dictEntries}`, data);
 }
 
 /**
@@ -149,8 +149,7 @@ function imageXObject(dictEntries, data) {
  * @param {string} content - form content stream
  */
 function formXObject(dictEntries, content) {
-  const len = Buffer.byteLength(content, 'binary');
-  return `<< /Type /XObject /Subtype /Form ${dictEntries} /Length ${len} >>\nstream\n${content}\nendstream`;
+  return stream(`/Type /XObject /Subtype /Form ${dictEntries}`, content);
 }
 
 /** Content stream text that draws one image XObject. */
@@ -353,8 +352,8 @@ function generateIccBased() {
     imageXObject(`/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace ${ref(7)}`, RGB_2X2),
     imageXObject(`/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace [ /ICCBased ${ref(9)} ]`, Buffer.from([0x00, 0x55, 0xAA, 0xFF])),
     `[ /ICCBased ${ref(8)} ]`,
-    stream('/N 3 /Alternate /DeviceRGB ', opaqueCodecPayload(32, 1)),
-    stream('/N 1 /Alternate /DeviceGray ', opaqueCodecPayload(32, 2)),
+    stream('/N 3 /Alternate /DeviceRGB', opaqueCodecPayload(32, 1)),
+    stream('/N 1 /Alternate /DeviceGray', opaqueCodecPayload(32, 2)),
   ]);
 }
 
@@ -373,7 +372,7 @@ function generateIndexedRgb() {
     imageXObject(`/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace [ /Indexed /DeviceRGB 3 ${hexString(lookup4)} ]`, Buffer.from([0, 1, 2, 3])),
     // 4 bpc: two indices per byte, one byte per row
     imageXObject(`/Width 2 /Height 2 /BitsPerComponent 4 /ColorSpace [ /Indexed /DeviceRGB 1 ${ref(7)} ]`, Buffer.from([0x01, 0x10])),
-    stream('/Filter /FlateDecode ', deflateSync(lookup2)),
+    stream('/Filter /FlateDecode', deflateSync(lookup2)),
   ]);
 }
 
@@ -390,7 +389,7 @@ function generateSeparationDeviceN() {
     imageXObject(`/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace [ /Separation /Spot /DeviceCMYK ${ref(7)} ]`, Buffer.from([0x00, 0x55, 0xAA, 0xFF])),
     imageXObject(`/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace [ /DeviceN [ /Cyan /Magenta ] /DeviceCMYK ${ref(8)} ]`, Buffer.alloc(2 * 2 * 2, 0x80)),
     '<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 0 0 1] /N 1 >>',
-    stream('/FunctionType 4 /Domain [0 1 0 1] /Range [0 1 0 1 0 1 0 1] ', '{ 0 0 }'),
+    stream('/FunctionType 4 /Domain [0 1 0 1] /Range [0 1 0 1 0 1 0 1]', '{ 0 0 }'),
   ]);
 }
 
@@ -399,7 +398,7 @@ function generateDctIndirectColorSpace() {
   return singlePagePdf(`/XObject << /Im1 ${ref(5)} >>`, drawImage('Im1'), [
     imageXObject(`/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace ${ref(6)} /Filter /DCTDecode`, createMinimalJpeg()),
     `[ /ICCBased ${ref(7)} ]`,
-    stream('/N 1 /Alternate /DeviceGray ', opaqueCodecPayload(32, 3)),
+    stream('/N 1 /Alternate /DeviceGray', opaqueCodecPayload(32, 3)),
   ]);
 }
 
