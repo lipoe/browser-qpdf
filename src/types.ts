@@ -231,9 +231,10 @@ export interface PdfDocument {
      */
     getImages(options?: { recursive?: boolean }): Result<ImageInfo[]>;
     /**
-     * Read decoded stream data: everything qpdf can decode, including JPEG
-     * via libjpeg; fails for codecs qpdf lacks (JPX, CCITT, JBIG2). Frozen
-     * 0.1.0 route ("samples or error"); prefer readImage().
+     * Read decoded stream data: every filter the qpdf build can decode is
+     * applied; the call fails when the chain contains one it cannot. Frozen
+     * 0.1.0 route ("samples or error"); prefer readImage(), which reports the
+     * stored encoding instead of depending on qpdf's decoders.
      */
     getImageStreamData(objId: number, generation: number): Result<Uint8Array>;
     /** Read raw (compressed/encoded) stream data for an image. */
