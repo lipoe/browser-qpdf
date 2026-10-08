@@ -17,9 +17,78 @@ export type Result<T> =
     | { ok: true; value: T }
     | { ok: false; code: ErrorCode; error: string };
 
+/** Reference to a PDF object. */
+export interface ObjRef {
+    objId: number;
+    generation: number;
+}
+
+/** Colour space families of ISO 32000-1 §8.6, plus 'Unknown' for anything else. */
+export type ColorSpaceFamily = ColorSpaceInfo['family'];
+
 /**
- * Metadata for a single image XObject found in the PDF, as read from the
- * image stream dictionary.
+ * Structured colour space facts (ISO 32000-1 §8.6). Indirect references are
+ * resolved before classifying; `raw` is the PDF syntax resolved one level.
+ * Forms the spec does not allow (e.g. a bare `/CalRGB` name) are reported as
+ * `'Unknown'` with their raw syntax. `components` is the number of colour
+ * components per sample as the PDF declares them; `null` when it cannot be
+ * determined (ICCBased without `/N`, Pattern, Unknown).
+ */
+export type ColorSpaceInfo =
+    | {
+          family: 'DeviceGray' | 'DeviceRGB' | 'DeviceCMYK' | 'CalGray' | 'CalRGB' | 'Lab' | 'Pattern' | 'Unknown';
+          components: number | null;
+          raw: string;
+      }
+    | {
+          family: 'ICCBased';
+          /** `/N` of the profile stream */
+          components: number | null;
+          /** The ICC profile stream; readable with the stream methods. null when not a stream. */
+          iccProfile: ObjRef | null;
+          raw: string;
+      }
+    | {
+          family: 'Indexed';
+          /** One index per sample */
+          components: 1;
+          base: ColorSpaceInfo;
+          hival: number;
+          /** Lookup table as stored: (hival + 1) entries of the base space's components */
+          lookup: Uint8Array;
+          raw: string;
+      }
+    | {
+          family: 'Separation' | 'DeviceN';
+          /** Separation: 1; DeviceN: number of colorant names */
+          components: number;
+          names: string[];
+          /** The alternate colour space; null when missing */
+          alternate: ColorSpaceInfo | null;
+          raw: string;
+      };
+
+/** Mask facts of an image: its own mask entries and which images use it as a mask. */
+export interface ImageMaskInfo {
+    /** `/ImageMask true`: the stream is a 1-bit stencil mask, not a picture */
+    isStencilMask: boolean;
+    /** `/SMaskInData` (JPX images whose alpha is inside the codestream), or null */
+    softMaskInData: number | null;
+    /** This image's `/SMask` stream, or null */
+    softMask: ObjRef | null;
+    /** This image's `/Mask`: a stencil mask stream, or a colour-key array, or null */
+    mask: { kind: 'stencil'; ref: ObjRef } | { kind: 'colorKey' } | null;
+    /** Images in the catalog whose `/SMask` is this stream (empty for ordinary pictures) */
+    softMaskOf: ObjRef[];
+    /** Images in the catalog whose `/Mask` is this stream */
+    maskOf: ObjRef[];
+}
+
+/**
+ * Facts about a single image XObject found in the PDF: the values of its
+ * stream dictionary as written, plus its relations to pages and to other
+ * images. The library reports facts only; it never derives values from the
+ * decoded data and never judges an image.
  */
 export interface ImageInfo {
     /** PDF object ID */
@@ -45,6 +114,27 @@ export interface ImageInfo {
     filter: string | null;
     /** Encoded (raw) stream length in bytes (/Length), 0 if missing */
     streamLength: number;
+
+    // --- added in 0.3.0 ---
+
+    /** Structured colour space; null when /ColorSpace is absent (stencil masks, some JPX images) */
+    colorSpaceInfo: ColorSpaceInfo | null;
+    /**
+     * Filter chain in application order, full names without leading slash
+     * (abbreviations like /Fl are expanded); [] when the stream is unfiltered
+     */
+    filters: string[];
+    /** /Decode array as written, or null */
+    decode: number[] | null;
+    masks: ImageMaskInfo;
+    /**
+     * 0-based indices of the pages from whose resources this image is
+     * reachable within the requested scope (`recursive` decides whether Form
+     * XObjects count). Sorted ascending.
+     */
+    pages: number[];
+    /** Pages whose own /Resources /XObject names this image. Sorted ascending. */
+    directPages: number[];
 }
 
 /**

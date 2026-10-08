@@ -18,6 +18,18 @@ export function readJson<T>(filename: string): T {
     return JSON.parse(readFileSync(join(FIXTURES_DIR, filename), 'utf8')) as T;
 }
 
+/**
+ * Filter facts of an image after writePdf(): QPDFWriter compresses previously
+ * unfiltered streams with FlateDecode (qpdf default) and keeps every other
+ * /Filter as written (including the abbreviation /Fl and codec chains).
+ */
+export function filterFactsAsWritten(info: { filter: string | null; filters: string[] }) {
+    return {
+        filter: info.filter ?? '/FlateDecode',
+        filters: info.filters.length > 0 ? info.filters : ['FlateDecode'],
+    };
+}
+
 /** Value of a successful result; throws with code and message otherwise. */
 export function unwrap<T>(result: { ok: true; value: T } | { ok: false; code?: string; error: string }): T {
     if (!result.ok) throw new Error(`unexpected error result: ${result.code ?? ''} ${result.error}`);

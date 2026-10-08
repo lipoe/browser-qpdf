@@ -48,6 +48,10 @@ export { ERROR_CODES, type ErrorCode } from './errors.js';
 export type {
     Result,
     ImageInfo,
+    ObjRef,
+    ColorSpaceFamily,
+    ColorSpaceInfo,
+    ImageMaskInfo,
     ImageMetadata,
     PdfDocument,
     QpdfImageStreams,

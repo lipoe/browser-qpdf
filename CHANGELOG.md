@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0 (unreleased)
+
+Additive: every 0.2.0 field of `ImageInfo` keeps its type and value. Check
+the two entries under "Changed" (stencil masks are now listed; the catalog
+is sorted by object id).
+
+### Added
+- `ImageInfo` reports structured facts next to the unchanged 0.2.0 fields:
+  `colorSpaceInfo` (colour space family, component count, resolved
+  references, ICC profile reference, Indexed base/hival/lookup, Separation
+  and DeviceN names and alternate space), `filters` (filter chain as full
+  names, abbreviations expanded), `decode`, `masks` (`isStencilMask`,
+  `softMask`, `mask`, `softMaskOf`, `maskOf`, `softMaskInData`), `pages` and
+  `directPages` (0-based page indices). Exported types `ObjRef`,
+  `ColorSpaceFamily`, `ColorSpaceInfo`, `ImageMaskInfo`.
+
+### Changed
+- `getImages()` lists stencil masks (`/ImageMask true`), which qpdf's
+  `forEachImage` excluded. They have `masks.isStencilMask: true`; to restore
+  the 0.2.0 list use `images.filter((i) => !i.masks.isStencilMask)`.
+- `getImages()` returns the catalog in ascending `(objId, generation)` order
+  instead of qpdf's traversal order. Order by `pages[0]` for page order.
+
 ## 0.2.0
 
 Mostly backward compatible: unencrypted PDFs behave as in 0.1.0, existing

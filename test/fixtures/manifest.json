@@ -2,7 +2,9 @@
   "description": "Test fixture manifest documenting expected properties for each PDF file. Used by unit and property-based tests to verify correct behavior. Every entry describes what the current binary returns; a deliberate behaviour change shows up as a diff of this file.",
   "conventions": {
     "decodedStreamLength": "byte length of getImageStreamData(); null means the call fails (qpdf cannot decode the filter chain) and never returns undecoded bytes",
-    "rawStreamLength": "byte length of getRawImageStreamData(); null when it depends on the zlib implementation (Flate-encoded payloads)"
+    "rawStreamLength": "byte length of getRawImageStreamData(); null when it depends on the zlib implementation (Flate-encoded payloads)",
+    "order": "expectedImages are listed in ascending (objId, generation) order, which is the order getImages() returns (since 0.3.0)",
+    "lookup": "colorSpaceInfo.lookup is a plain number array here; the library returns a Uint8Array"
   },
   "fixtures": {
     "simple-one-image.pdf": {
@@ -15,12 +17,37 @@
           "bitsPerComponent": 8,
           "colorSpace": "/DeviceRGB",
           "filter": null,
+          "colorSpaceInfo": {
+            "family": "DeviceRGB",
+            "components": 3,
+            "raw": "/DeviceRGB"
+          },
+          "filters": [],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
           "decodedStreamLength": 12,
           "rawStreamLength": 12
         }
       ],
       "totalImageCount": 1,
-      "requirements": ["2.1", "3.1", "4.1"]
+      "requirements": [
+        "2.1",
+        "3.1",
+        "4.1"
+      ]
     },
     "multi-image.pdf": {
       "description": "3 images across 2 pages. Page 1: 4x4 RGB + 2x2 Gray. Page 2: 3x3 RGB.",
@@ -32,6 +59,27 @@
           "bitsPerComponent": 8,
           "colorSpace": "/DeviceRGB",
           "filter": null,
+          "colorSpaceInfo": {
+            "family": "DeviceRGB",
+            "components": 3,
+            "raw": "/DeviceRGB"
+          },
+          "filters": [],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
           "decodedStreamLength": 48,
           "rawStreamLength": 48
         },
@@ -41,6 +89,27 @@
           "bitsPerComponent": 8,
           "colorSpace": "/DeviceGray",
           "filter": null,
+          "colorSpaceInfo": {
+            "family": "DeviceGray",
+            "components": 1,
+            "raw": "/DeviceGray"
+          },
+          "filters": [],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
           "decodedStreamLength": 4,
           "rawStreamLength": 4
         },
@@ -50,19 +119,45 @@
           "bitsPerComponent": 8,
           "colorSpace": "/DeviceRGB",
           "filter": null,
+          "colorSpaceInfo": {
+            "family": "DeviceRGB",
+            "components": 3,
+            "raw": "/DeviceRGB"
+          },
+          "filters": [],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            1
+          ],
+          "directPages": [
+            1
+          ],
           "decodedStreamLength": 27,
           "rawStreamLength": 27
         }
       ],
       "totalImageCount": 3,
-      "requirements": ["3.1", "3.2"]
+      "requirements": [
+        "3.1",
+        "3.2"
+      ]
     },
     "no-images.pdf": {
       "description": "Valid PDF with text content only, no image XObjects",
       "pageCount": 1,
       "expectedImages": [],
       "totalImageCount": 0,
-      "requirements": ["3.7"]
+      "requirements": [
+        "3.7"
+      ]
     },
     "jpeg-compressed.pdf": {
       "description": "Single 2x2 grayscale image with DCTDecode (JPEG) compression",
@@ -74,13 +169,39 @@
           "bitsPerComponent": 8,
           "colorSpace": "/DeviceGray",
           "filter": "/DCTDecode",
+          "colorSpaceInfo": {
+            "family": "DeviceGray",
+            "components": 1,
+            "raw": "/DeviceGray"
+          },
+          "filters": [
+            "DCTDecode"
+          ],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
           "decodedStreamLength": 4,
           "rawStreamLength": null
         }
       ],
       "totalImageCount": 1,
       "notes": "rawStreamLength is the byte length of the embedded JPEG data (variable depending on JPEG encoding). decodedStreamLength is 2*2*1 = 4 bytes of uncompressed grayscale pixels.",
-      "requirements": ["4.1", "4.2"]
+      "requirements": [
+        "4.1",
+        "4.2"
+      ]
     },
     "nested-forms.pdf": {
       "description": "One image directly on the page (2x2 RGB), one image inside a Form XObject (3x3 RGB). Tests recursive enumeration.",
@@ -93,6 +214,27 @@
             "bitsPerComponent": 8,
             "colorSpace": "/DeviceRGB",
             "filter": null,
+            "colorSpaceInfo": {
+              "family": "DeviceRGB",
+              "components": 3,
+              "raw": "/DeviceRGB"
+            },
+            "filters": [],
+            "decode": null,
+            "masks": {
+              "isStencilMask": false,
+              "softMaskInData": null,
+              "softMask": null,
+              "mask": null,
+              "softMaskOf": [],
+              "maskOf": []
+            },
+            "pages": [
+              0
+            ],
+            "directPages": [
+              0
+            ],
             "decodedStreamLength": 12,
             "rawStreamLength": 12
           }
@@ -104,6 +246,27 @@
             "bitsPerComponent": 8,
             "colorSpace": "/DeviceRGB",
             "filter": null,
+            "colorSpaceInfo": {
+              "family": "DeviceRGB",
+              "components": 3,
+              "raw": "/DeviceRGB"
+            },
+            "filters": [],
+            "decode": null,
+            "masks": {
+              "isStencilMask": false,
+              "softMaskInData": null,
+              "softMask": null,
+              "mask": null,
+              "softMaskOf": [],
+              "maskOf": []
+            },
+            "pages": [
+              0
+            ],
+            "directPages": [
+              0
+            ],
             "decodedStreamLength": 12,
             "rawStreamLength": 12
           },
@@ -113,6 +276,25 @@
             "bitsPerComponent": 8,
             "colorSpace": "/DeviceRGB",
             "filter": null,
+            "colorSpaceInfo": {
+              "family": "DeviceRGB",
+              "components": 3,
+              "raw": "/DeviceRGB"
+            },
+            "filters": [],
+            "decode": null,
+            "masks": {
+              "isStencilMask": false,
+              "softMaskInData": null,
+              "softMask": null,
+              "mask": null,
+              "softMaskOf": [],
+              "maskOf": []
+            },
+            "pages": [
+              0
+            ],
+            "directPages": [],
             "decodedStreamLength": 27,
             "rawStreamLength": 27
           }
@@ -122,159 +304,893 @@
         "recursive_false": 1,
         "recursive_true": 2
       },
-      "requirements": ["3.4", "3.5"]
+      "requirements": [
+        "3.4",
+        "3.5"
+      ]
     },
-
     "smask-pair.pdf": {
       "description": "2x2 RGB picture (obj 5) whose /SMask points at a 2x2 gray image (obj 6); both are page resources.",
       "pageCount": 1,
       "expectedImages": [
-        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "/DeviceRGB", "filter": null, "decodedStreamLength": 12, "rawStreamLength": 12 },
-        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "/DeviceGray", "filter": null, "decodedStreamLength": 4, "rawStreamLength": 4 }
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "/DeviceRGB",
+          "filter": null,
+          "colorSpaceInfo": {
+            "family": "DeviceRGB",
+            "components": 3,
+            "raw": "/DeviceRGB"
+          },
+          "filters": [],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": {
+              "objId": 6,
+              "generation": 0
+            },
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": 12,
+          "rawStreamLength": 12
+        },
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "/DeviceGray",
+          "filter": null,
+          "colorSpaceInfo": {
+            "family": "DeviceGray",
+            "components": 1,
+            "raw": "/DeviceGray"
+          },
+          "filters": [],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [
+              {
+                "objId": 5,
+                "generation": 0
+              }
+            ],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": 4,
+          "rawStreamLength": 4
+        }
       ],
       "totalImageCount": 2,
-      "facts": ["masks.softMask", "masks.softMaskOf"]
+      "facts": [
+        "masks.softMask",
+        "masks.softMaskOf"
+      ]
     },
     "stencil-mask-pair.pdf": {
-      "description": "2x2 RGB picture (obj 5) with a stencil /Mask stream (obj 6, /ImageMask true); both are page resources. The stencil mask is not listed by the current binary (qpdf's forEachImage excludes /ImageMask streams).",
+      "description": "2x2 RGB picture (obj 5) with a stencil /Mask stream (obj 6, /ImageMask true); both are page resources. The stencil mask is listed since 0.3.0 (isStencilMask true, maskOf [5]).",
       "pageCount": 1,
       "expectedImages": [
-        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "/DeviceRGB", "filter": null, "decodedStreamLength": 12, "rawStreamLength": 12 }
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "/DeviceRGB",
+          "filter": null,
+          "colorSpaceInfo": {
+            "family": "DeviceRGB",
+            "components": 3,
+            "raw": "/DeviceRGB"
+          },
+          "filters": [],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": {
+              "kind": "stencil",
+              "ref": {
+                "objId": 6,
+                "generation": 0
+              }
+            },
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": 12,
+          "rawStreamLength": 12
+        },
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 1,
+          "colorSpace": null,
+          "filter": null,
+          "colorSpaceInfo": null,
+          "filters": [],
+          "decode": null,
+          "masks": {
+            "isStencilMask": true,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": [
+              {
+                "objId": 5,
+                "generation": 0
+              }
+            ]
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": 2,
+          "rawStreamLength": 2
+        }
       ],
-      "totalImageCount": 1,
-      "facts": ["masks.mask (stencil)", "masks.maskOf", "masks.isStencilMask"]
+      "totalImageCount": 2,
+      "facts": [
+        "masks.mask (stencil)",
+        "masks.maskOf",
+        "masks.isStencilMask"
+      ]
     },
     "colorkey-mask.pdf": {
       "description": "2x2 RGB picture with a colour-key /Mask array.",
       "pageCount": 1,
       "expectedImages": [
-        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "/DeviceRGB", "filter": null, "decodedStreamLength": 12, "rawStreamLength": 12 }
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "/DeviceRGB",
+          "filter": null,
+          "colorSpaceInfo": {
+            "family": "DeviceRGB",
+            "components": 3,
+            "raw": "/DeviceRGB"
+          },
+          "filters": [],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": {
+              "kind": "colorKey"
+            },
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": 12,
+          "rawStreamLength": 12
+        }
       ],
       "totalImageCount": 1,
-      "facts": ["masks.mask (colorKey)"]
+      "facts": [
+        "masks.mask (colorKey)"
+      ]
     },
     "imagemask-decode.pdf": {
-      "description": "A single 8x2 stencil mask (/ImageMask true, 1 bpc, /Decode [1 0]). Not listed by the current binary (qpdf's forEachImage excludes /ImageMask streams).",
+      "description": "A single 8x2 stencil mask (/ImageMask true, 1 bpc, /Decode [1 0]). Listed since 0.3.0; qpdf's forEachImage would exclude it.",
       "pageCount": 1,
-      "expectedImages": [],
-      "totalImageCount": 0,
-      "facts": ["masks.isStencilMask", "decode", "colorSpaceInfo null"]
+      "expectedImages": [
+        {
+          "width": 8,
+          "height": 2,
+          "bitsPerComponent": 1,
+          "colorSpace": null,
+          "filter": null,
+          "colorSpaceInfo": null,
+          "filters": [],
+          "decode": [
+            1,
+            0
+          ],
+          "masks": {
+            "isStencilMask": true,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": 2,
+          "rawStreamLength": 2
+        }
+      ],
+      "totalImageCount": 1,
+      "facts": [
+        "masks.isStencilMask",
+        "decode",
+        "colorSpaceInfo null"
+      ]
     },
     "iccbased-n3-n1.pdf": {
       "description": "Im1: /ColorSpace is an indirect reference to [ /ICCBased 8 0 R ] with /N 3. Im2: direct array [ /ICCBased 9 0 R ] with /N 1.",
       "pageCount": 1,
       "expectedImages": [
-        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "7 0 R", "filter": null, "decodedStreamLength": 12, "rawStreamLength": 12 },
-        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "[ /ICCBased 9 0 R ]", "filter": null, "decodedStreamLength": 4, "rawStreamLength": 4 }
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "7 0 R",
+          "filter": null,
+          "colorSpaceInfo": {
+            "family": "ICCBased",
+            "components": 3,
+            "raw": "[ /ICCBased 8 0 R ]",
+            "iccProfile": {
+              "objId": 8,
+              "generation": 0
+            }
+          },
+          "filters": [],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": 12,
+          "rawStreamLength": 12
+        },
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "[ /ICCBased 9 0 R ]",
+          "filter": null,
+          "colorSpaceInfo": {
+            "family": "ICCBased",
+            "components": 1,
+            "raw": "[ /ICCBased 9 0 R ]",
+            "iccProfile": {
+              "objId": 9,
+              "generation": 0
+            }
+          },
+          "filters": [],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": 4,
+          "rawStreamLength": 4
+        }
       ],
       "totalImageCount": 2,
-      "facts": ["colorSpaceInfo ICCBased", "colorSpaceInfo.iccProfile", "indirect /ColorSpace"]
+      "facts": [
+        "colorSpaceInfo ICCBased",
+        "colorSpaceInfo.iccProfile",
+        "indirect /ColorSpace"
+      ]
     },
     "indexed-rgb.pdf": {
       "description": "Im1: Indexed over DeviceRGB, 8 bpc, hival 3, lookup as hex string. Im2: Indexed over DeviceRGB, 4 bpc, hival 1, lookup as Flate stream (obj 7).",
       "pageCount": 1,
       "expectedImages": [
-        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "[ /Indexed /DeviceRGB 3 <ff000000ff000000ffffff00> ]", "filter": null, "decodedStreamLength": 4, "rawStreamLength": 4 },
-        { "width": 2, "height": 2, "bitsPerComponent": 4, "colorSpace": "[ /Indexed /DeviceRGB 1 7 0 R ]", "filter": null, "decodedStreamLength": 2, "rawStreamLength": 2 }
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "[ /Indexed /DeviceRGB 3 <ff000000ff000000ffffff00> ]",
+          "filter": null,
+          "colorSpaceInfo": {
+            "family": "Indexed",
+            "components": 1,
+            "raw": "[ /Indexed /DeviceRGB 3 <ff000000ff000000ffffff00> ]",
+            "base": {
+              "family": "DeviceRGB",
+              "components": 3,
+              "raw": "/DeviceRGB"
+            },
+            "hival": 3,
+            "lookup": [
+              255,
+              0,
+              0,
+              0,
+              255,
+              0,
+              0,
+              0,
+              255,
+              255,
+              255,
+              0
+            ]
+          },
+          "filters": [],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": 4,
+          "rawStreamLength": 4
+        },
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 4,
+          "colorSpace": "[ /Indexed /DeviceRGB 1 7 0 R ]",
+          "filter": null,
+          "colorSpaceInfo": {
+            "family": "Indexed",
+            "components": 1,
+            "raw": "[ /Indexed /DeviceRGB 1 7 0 R ]",
+            "base": {
+              "family": "DeviceRGB",
+              "components": 3,
+              "raw": "/DeviceRGB"
+            },
+            "hival": 1,
+            "lookup": [
+              17,
+              34,
+              51,
+              68,
+              85,
+              102
+            ]
+          },
+          "filters": [],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": 2,
+          "rawStreamLength": 2
+        }
       ],
       "totalImageCount": 2,
-      "facts": ["colorSpaceInfo Indexed", "indexed.hival", "indexed.lookup"]
+      "facts": [
+        "colorSpaceInfo Indexed",
+        "indexed.hival",
+        "indexed.lookup"
+      ]
     },
     "separation-devicen.pdf": {
       "description": "Im1: Separation /Spot over DeviceCMYK with a type 2 tint transform. Im2: DeviceN [ /Cyan /Magenta ] over DeviceCMYK with a type 4 tint transform.",
       "pageCount": 1,
       "expectedImages": [
-        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "[ /Separation /Spot /DeviceCMYK 7 0 R ]", "filter": null, "decodedStreamLength": 4, "rawStreamLength": 4 },
-        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "[ /DeviceN [ /Cyan /Magenta ] /DeviceCMYK 8 0 R ]", "filter": null, "decodedStreamLength": 8, "rawStreamLength": 8 }
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "[ /Separation /Spot /DeviceCMYK 7 0 R ]",
+          "filter": null,
+          "colorSpaceInfo": {
+            "family": "Separation",
+            "components": 1,
+            "raw": "[ /Separation /Spot /DeviceCMYK 7 0 R ]",
+            "names": [
+              "Spot"
+            ],
+            "alternate": {
+              "family": "DeviceCMYK",
+              "components": 4,
+              "raw": "/DeviceCMYK"
+            }
+          },
+          "filters": [],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": 4,
+          "rawStreamLength": 4
+        },
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "[ /DeviceN [ /Cyan /Magenta ] /DeviceCMYK 8 0 R ]",
+          "filter": null,
+          "colorSpaceInfo": {
+            "family": "DeviceN",
+            "components": 2,
+            "raw": "[ /DeviceN [ /Cyan /Magenta ] /DeviceCMYK 8 0 R ]",
+            "names": [
+              "Cyan",
+              "Magenta"
+            ],
+            "alternate": {
+              "family": "DeviceCMYK",
+              "components": 4,
+              "raw": "/DeviceCMYK"
+            }
+          },
+          "filters": [],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": 8,
+          "rawStreamLength": 8
+        }
       ],
       "totalImageCount": 2,
-      "facts": ["colorSpaceInfo Separation", "colorSpaceInfo DeviceN", "names", "alternate"]
+      "facts": [
+        "colorSpaceInfo Separation",
+        "colorSpaceInfo DeviceN",
+        "names",
+        "alternate"
+      ]
     },
     "dct-indirect-colorspace.pdf": {
       "description": "2x2 gray JPEG whose /ColorSpace is an indirect reference (obj 6) to [ /ICCBased 7 0 R ], /N 1: the \"940 0 R\" case from the handoff.",
       "pageCount": 1,
       "expectedImages": [
-        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "6 0 R", "filter": "/DCTDecode", "decodedStreamLength": 4, "rawStreamLength": 337 }
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "6 0 R",
+          "filter": "/DCTDecode",
+          "colorSpaceInfo": {
+            "family": "ICCBased",
+            "components": 1,
+            "raw": "[ /ICCBased 7 0 R ]",
+            "iccProfile": {
+              "objId": 7,
+              "generation": 0
+            }
+          },
+          "filters": [
+            "DCTDecode"
+          ],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": 4,
+          "rawStreamLength": 337
+        }
       ],
       "totalImageCount": 1,
-      "facts": ["colorSpaceInfo resolves indirect reference", "readImage jpeg"]
+      "facts": [
+        "colorSpaceInfo resolves indirect reference",
+        "readImage jpeg"
+      ]
     },
     "flate-dct-chain.pdf": {
       "description": "2x2 gray JPEG wrapped in Flate: /Filter [ /FlateDecode /DCTDecode ]. qpdf decodes the whole chain (libjpeg) to 4 samples.",
       "pageCount": 1,
       "expectedImages": [
-        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "/DeviceGray", "filter": "[ /FlateDecode /DCTDecode ]", "decodedStreamLength": 4, "rawStreamLength": null }
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "/DeviceGray",
+          "filter": "[ /FlateDecode /DCTDecode ]",
+          "colorSpaceInfo": {
+            "family": "DeviceGray",
+            "components": 1,
+            "raw": "/DeviceGray"
+          },
+          "filters": [
+            "FlateDecode",
+            "DCTDecode"
+          ],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": 4,
+          "rawStreamLength": null
+        }
       ],
       "totalImageCount": 1,
-      "facts": ["filters", "readImage jpeg after container removal"]
+      "facts": [
+        "filters",
+        "readImage jpeg after container removal"
+      ]
     },
     "jpx-flate-chain.pdf": {
       "description": "JPX payload wrapped in Flate, /SMaskInData 1, no /ColorSpace and no /BitsPerComponent (allowed for JPX). qpdf cannot decode JPX, so getImageStreamData fails for the whole chain; the payload bytes are opaque placeholders.",
       "pageCount": 1,
       "expectedImages": [
-        { "width": 2, "height": 2, "bitsPerComponent": null, "colorSpace": null, "filter": "[ /FlateDecode /JPXDecode ]", "decodedStreamLength": null, "rawStreamLength": null }
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": null,
+          "colorSpace": null,
+          "filter": "[ /FlateDecode /JPXDecode ]",
+          "colorSpaceInfo": null,
+          "filters": [
+            "FlateDecode",
+            "JPXDecode"
+          ],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": 1,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": null,
+          "rawStreamLength": null
+        }
       ],
       "totalImageCount": 1,
-      "facts": ["filters", "readImage jpeg2000", "masks.softMaskInData", "getImageStreamData: samples or error"]
+      "facts": [
+        "filters",
+        "readImage jpeg2000",
+        "masks.softMaskInData",
+        "getImageStreamData: samples or error"
+      ]
     },
     "ccitt-1bit.pdf": {
       "description": "8x2 1-bpc gray image, /Filter /CCITTFaxDecode with /DecodeParms << /K -1 /Columns 8 /BlackIs1 true >>. Opaque placeholder payload; qpdf cannot decode CCITT.",
       "pageCount": 1,
       "expectedImages": [
-        { "width": 8, "height": 2, "bitsPerComponent": 1, "colorSpace": "/DeviceGray", "filter": "/CCITTFaxDecode", "decodedStreamLength": null, "rawStreamLength": 4 }
+        {
+          "width": 8,
+          "height": 2,
+          "bitsPerComponent": 1,
+          "colorSpace": "/DeviceGray",
+          "filter": "/CCITTFaxDecode",
+          "colorSpaceInfo": {
+            "family": "DeviceGray",
+            "components": 1,
+            "raw": "/DeviceGray"
+          },
+          "filters": [
+            "CCITTFaxDecode"
+          ],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": null,
+          "rawStreamLength": 4
+        }
       ],
       "totalImageCount": 1,
-      "facts": ["readImage ccitt with typed parameters"]
+      "facts": [
+        "readImage ccitt with typed parameters"
+      ]
     },
     "jbig2-globals.pdf": {
       "description": "8x2 1-bpc gray image, /Filter /JBIG2Decode with /DecodeParms << /JBIG2Globals 6 0 R >>. Opaque placeholder payloads; qpdf cannot decode JBIG2.",
       "pageCount": 1,
       "expectedImages": [
-        { "width": 8, "height": 2, "bitsPerComponent": 1, "colorSpace": "/DeviceGray", "filter": "/JBIG2Decode", "decodedStreamLength": null, "rawStreamLength": 6 }
+        {
+          "width": 8,
+          "height": 2,
+          "bitsPerComponent": 1,
+          "colorSpace": "/DeviceGray",
+          "filter": "/JBIG2Decode",
+          "colorSpaceInfo": {
+            "family": "DeviceGray",
+            "components": 1,
+            "raw": "/DeviceGray"
+          },
+          "filters": [
+            "JBIG2Decode"
+          ],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": null,
+          "rawStreamLength": 6
+        }
       ],
       "totalImageCount": 1,
-      "facts": ["readImage jbig2 with globals ref"]
+      "facts": [
+        "readImage jbig2 with globals ref"
+      ]
     },
     "codec-not-last.pdf": {
       "description": "Invalid chain /Filter [ /DCTDecode /FlateDecode ] (codec before container filter). qpdf fails decoding (libjpeg sees zlib bytes).",
       "pageCount": 1,
       "expectedImages": [
-        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "/DeviceGray", "filter": "[ /DCTDecode /FlateDecode ]", "decodedStreamLength": null, "rawStreamLength": null }
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "/DeviceGray",
+          "filter": "[ /DCTDecode /FlateDecode ]",
+          "colorSpaceInfo": {
+            "family": "DeviceGray",
+            "components": 1,
+            "raw": "/DeviceGray"
+          },
+          "filters": [
+            "DCTDecode",
+            "FlateDecode"
+          ],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": null,
+          "rawStreamLength": null
+        }
       ],
       "totalImageCount": 1,
-      "facts": ["readImage: unsupported filter chain"]
+      "facts": [
+        "readImage: unsupported filter chain"
+      ]
     },
     "shared-image-3-pages.pdf": {
       "description": "One 2x2 RGB image XObject (obj 7) referenced from the resources of all three pages; the content stream is shared as well.",
       "pageCount": 3,
       "expectedImages": [
-        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "/DeviceRGB", "filter": null, "decodedStreamLength": 12, "rawStreamLength": 12 }
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "/DeviceRGB",
+          "filter": null,
+          "colorSpaceInfo": {
+            "family": "DeviceRGB",
+            "components": 3,
+            "raw": "/DeviceRGB"
+          },
+          "filters": [],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0,
+            1,
+            2
+          ],
+          "directPages": [
+            0,
+            1,
+            2
+          ],
+          "decodedStreamLength": 12,
+          "rawStreamLength": 12
+        }
       ],
       "totalImageCount": 1,
-      "facts": ["pages [0, 1, 2]", "deduplication across pages"]
+      "facts": [
+        "pages [0, 1, 2]",
+        "deduplication across pages"
+      ]
     },
     "rotated-page.pdf": {
       "description": "Page 0: explicit /MediaBox [0 0 400 300] and /Rotate 90. Page 1: inherits both from the page tree root. Page 2: invalid /Rotate 45. No images, no /Resources (qpdf warns and repairs).",
       "pageCount": 3,
       "expectedImages": [],
       "totalImageCount": 0,
-      "facts": ["getPageInfo mediaBox", "getPageInfo rotate (explicit, inherited, invalid)"]
+      "facts": [
+        "getPageInfo mediaBox",
+        "getPageInfo rotate (explicit, inherited, invalid)"
+      ]
     },
     "no-mediabox.pdf": {
       "description": "One page without any /MediaBox (own or inherited). qpdf repairs the missing box to Letter during page tree traversal and warns.",
       "pageCount": 1,
       "expectedImages": [],
       "totalImageCount": 0,
-      "facts": ["getPageInfo mediaBox when the PDF has none"]
+      "facts": [
+        "getPageInfo mediaBox when the PDF has none"
+      ]
     },
     "filter-abbreviations.pdf": {
-      "description": "2x2 RGB image compressed with Flate, written with the inline-image abbreviation /Fl. qpdf accepts the abbreviation; the filter string is reported as written.",
+      "description": "2x2 RGB image compressed with Flate, written with the inline-image abbreviation /Fl. The filter string is reported as written; filters expands it to FlateDecode.",
       "pageCount": 1,
       "expectedImages": [
-        { "width": 2, "height": 2, "bitsPerComponent": 8, "colorSpace": "/DeviceRGB", "filter": "/Fl", "decodedStreamLength": 12, "rawStreamLength": null }
+        {
+          "width": 2,
+          "height": 2,
+          "bitsPerComponent": 8,
+          "colorSpace": "/DeviceRGB",
+          "filter": "/Fl",
+          "colorSpaceInfo": {
+            "family": "DeviceRGB",
+            "components": 3,
+            "raw": "/DeviceRGB"
+          },
+          "filters": [
+            "FlateDecode"
+          ],
+          "decode": null,
+          "masks": {
+            "isStencilMask": false,
+            "softMaskInData": null,
+            "softMask": null,
+            "mask": null,
+            "softMaskOf": [],
+            "maskOf": []
+          },
+          "pages": [
+            0
+          ],
+          "directPages": [
+            0
+          ],
+          "decodedStreamLength": 12,
+          "rawStreamLength": null
+        }
       ],
       "totalImageCount": 1,
-      "facts": ["filters expands abbreviations"]
+      "facts": [
+        "filters expands abbreviations"
+      ]
     }
   }
 }

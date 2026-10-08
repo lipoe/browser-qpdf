@@ -11,7 +11,7 @@ import {
     type Result,
 } from '../../src/index.js';
 import { containsEncryptDict } from '../scenarios/encryption-scenarios.mjs';
-import { loadFixture, pageCount, readJson, unwrap } from './helpers.js';
+import { filterFactsAsWritten, loadFixture, pageCount, readJson, unwrap } from './helpers.js';
 
 interface EncryptedManifest {
     source: string;
@@ -70,7 +70,7 @@ describe('Decrypting PDFs (real WASM)', () => {
             const reloaded = unwrap(qpdf.loadPdf(plain));
             expect(unwrap(reloaded.isEncrypted())).toBe(false);
             expect(unwrap(reloaded.getImages()).map(shape)).toEqual(
-                sourceImages.map((img) => ({ ...img, filter: img.filter ?? '/FlateDecode' }))
+                sourceImages.map((img) => ({ ...img, ...filterFactsAsWritten(img) }))
             );
             reloaded.close();
         });

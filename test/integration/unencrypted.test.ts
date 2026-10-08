@@ -14,17 +14,62 @@ import {
     type ImageInfo,
 } from '../../src/index.js';
 import { containsEncryptDict } from '../scenarios/encryption-scenarios.mjs';
-import { loadFixture, pageCount, readJson, unwrap } from './helpers.js';
+import { filterFactsAsWritten, loadFixture, pageCount, readJson, unwrap } from './helpers.js';
 
+/**
+ * One image as recorded in manifest.json: the ImageInfo fields (without
+ * object location) plus the stream lengths. `colorSpaceInfo.lookup` is a
+ * plain number array in JSON and becomes a Uint8Array for comparison.
+ */
 interface ExpectedImage {
     width: number;
     height: number;
     bitsPerComponent: number | null;
     colorSpace: string | null;
     filter: string | null;
+    colorSpaceInfo: unknown;
+    filters: string[];
+    decode: number[] | null;
+    masks: unknown;
+    pages: number[];
+    directPages: number[];
     /** null: getImageStreamData() fails for this image (see manifest "conventions") */
     decodedStreamLength: number | null;
     rawStreamLength: number | null;
+}
+
+/** Deep copy with every `lookup: number[]` turned into a Uint8Array (JSON cannot hold typed arrays). */
+function withLookupBytes(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(withLookupBytes);
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(
+            Object.entries(value).map(([key, inner]) => [
+                key,
+                key === 'lookup' && Array.isArray(inner) ? Uint8Array.from(inner as number[]) : withLookupBytes(inner),
+            ])
+        );
+    }
+    return value;
+}
+
+/** The ImageInfo an expected manifest entry describes (object location is checked separately). */
+function expectedInfo(expected: ExpectedImage) {
+    return {
+        objId: expect.any(Number),
+        generation: 0,
+        width: expected.width,
+        height: expected.height,
+        bitsPerComponent: expected.bitsPerComponent,
+        colorSpace: expected.colorSpace,
+        filter: expected.filter,
+        streamLength: expected.rawStreamLength ?? expect.any(Number),
+        colorSpaceInfo: withLookupBytes(expected.colorSpaceInfo),
+        filters: expected.filters,
+        decode: expected.decode,
+        masks: expected.masks,
+        pages: expected.pages,
+        directPages: expected.directPages,
+    };
 }
 
 interface FixtureManifest {
@@ -47,25 +92,46 @@ function expectedImagesOf(name: string, recursive: boolean): ExpectedImage[] {
 }
 
 
-/**
- * Image metadata without object location and encoded length (both change
- * when writing). Indirect references inside the colorSpace string (e.g.
- * "7 0 R", "[ /ICCBased 9 0 R ]") are renumbered by QPDFWriter as well, so
- * their object numbers are masked.
- */
-function withoutLocation(info: ImageInfo) {
-    const { objId: _objId, generation: _generation, streamLength: _streamLength, ...shape } = info;
-    return { ...shape, colorSpace: shape.colorSpace?.replace(/\b\d+ 0 R\b/g, 'N 0 R') ?? null };
+/** An {objId, generation} object (ObjRef). */
+function isObjRef(value: unknown): boolean {
+    return (
+        !!value &&
+        typeof value === 'object' &&
+        Object.keys(value).length === 2 &&
+        typeof (value as { objId?: unknown }).objId === 'number' &&
+        typeof (value as { generation?: unknown }).generation === 'number'
+    );
 }
 
 /**
- * Expected metadata after writePdf(): QPDFWriter renumbers objects and
- * compresses previously unfiltered streams with FlateDecode (qpdf default).
- * Filtered streams keep their /Filter as written, including the abbreviation
- * /Fl and chains with image codecs.
+ * Deep copy with every object reference masked: ObjRef objects become 'REF'
+ * and "n 0 R" inside strings becomes "N 0 R". QPDFWriter renumbers objects,
+ * so these are the only parts of an ImageInfo that may legitimately differ
+ * between a document and its written copy.
  */
+function maskRefs(value: unknown): unknown {
+    if (typeof value === 'string') return value.replace(/\b\d+ 0 R\b/g, 'N 0 R');
+    if (value instanceof Uint8Array) return value;
+    if (Array.isArray(value)) return value.map(maskRefs);
+    if (isObjRef(value)) return 'REF';
+    if (value && typeof value === 'object') {
+        return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, maskRefs(inner)]));
+    }
+    return value;
+}
+
+/**
+ * Image facts without object location and encoded length (both change when
+ * writing) and with object references masked (see maskRefs).
+ */
+function withoutLocation(info: ImageInfo) {
+    const { objId: _objId, generation: _generation, streamLength: _streamLength, ...shape } = info;
+    return maskRefs(shape) as Omit<ImageInfo, 'objId' | 'generation' | 'streamLength'>;
+}
+
+/** Expected facts after writePdf(): objects renumbered (masked), filters as the writer leaves them. */
 function writtenShape(info: ImageInfo) {
-    return { ...withoutLocation(info), filter: info.filter ?? '/FlateDecode' };
+    return { ...withoutLocation(info), ...filterFactsAsWritten(info) };
 }
 
 /** Decoded stream data, or null when qpdf cannot decode the chain (the manifest records which). */
@@ -102,18 +168,10 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             const expected = expectedImagesOf(name, recursive);
 
             expect(images).toHaveLength(expected.length);
-            images.forEach((info, i) => {
-                expect(info).toEqual({
-                    objId: expect.any(Number),
-                    generation: 0,
-                    width: expected[i].width,
-                    height: expected[i].height,
-                    bitsPerComponent: expected[i].bitsPerComponent,
-                    colorSpace: expected[i].colorSpace,
-                    filter: expected[i].filter,
-                    streamLength: expected[i].rawStreamLength ?? expect.any(Number),
-                });
-            });
+            images.forEach((info, i) => expect(info).toEqual(expectedInfo(expected[i])));
+            // the catalog is in ascending object order, independent of traversal
+            const order = images.map((info) => [info.objId, info.generation] as const);
+            expect(order).toEqual([...order].sort((a, b) => a[0] - b[0] || a[1] - b[1]));
             doc.close();
         });
 
@@ -172,7 +230,13 @@ describe('Unencrypted PDFs (real WASM, characterization)', () => {
             doc.close();
             const [firstAfter, ...othersAfter] = imagesOf(reloaded);
             expect(withoutLocation(firstAfter)).toEqual(
-                writtenShape({ ...first, width: 2, height: 2, colorSpace: '/DeviceGray' })
+                writtenShape({
+                    ...first,
+                    width: 2,
+                    height: 2,
+                    colorSpace: '/DeviceGray',
+                    colorSpaceInfo: { family: 'DeviceGray', components: 1, raw: '/DeviceGray' },
+                })
             );
             expect(unwrap(reloaded.getImageStreamData(firstAfter.objId, firstAfter.generation))).toEqual(replacement);
             expect(othersAfter.map(withoutLocation)).toEqual(others.map(writtenShape));
