@@ -22,6 +22,7 @@ export interface RawWrapper {
     close(): void;
     getPageCount(): unknown;
     getPageInfo(index: number): unknown;
+    getImagePaints(index: number): unknown;
     /** Embind: frees the C++ object itself. */
     delete(): void;
 }

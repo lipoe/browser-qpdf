@@ -12,6 +12,7 @@
  * 4. Replace image stream data with new content and metadata
  * 5. Write the modified PDF to a Uint8Array
  * 6. Explicit close() for memory management
+ * 7. Report page facts and where each page paints its image XObjects
  *
  * The wrapper catches all C++ exceptions at the boundary and returns
  * structured result objects {success, kind, error} to JavaScript.
@@ -22,6 +23,7 @@
 
 #include <qpdf/QPDF.hh>
 #include <qpdf/QPDFExc.hh>
+#include <qpdf/QPDFMatrix.hh>
 #include <qpdf/QPDFObjGen.hh>
 #include <qpdf/QPDFPageDocumentHelper.hh>
 #include <qpdf/QPDFPageObjectHelper.hh>
@@ -130,7 +132,8 @@ static val makeNoPdfError() {
 
 // Runs `body` and converts every C++ exception into an error result. This is
 // the only place where exceptions are classified into error kinds. (getImages
-// additionally degrades to partial facts on traversal errors by design; see there.)
+// additionally degrades to partial facts on traversal errors by design, and
+// getImagePaints reports every failure to read content as damaged_pdf; see there.)
 template <typename Body>
 static val guarded(Body&& body) {
     try {
@@ -738,6 +741,202 @@ static val rectangleFact(QPDFObjectHandle const& box) {
     return rect;
 }
 
+// /UserUnit (ISO 32000-1 table 30, not inheritable): missing -> 1 (spec
+// default); not a positive number -> JS null (invalid, not mapped to 1).
+static val userUnitFact(QPDFObjectHandle const& userUnit) {
+    if (userUnit.isNull()) return val(1);
+    if (!userUnit.isNumber() || userUnit.getNumericValue() <= 0) return val::null();
+    return val(userUnit.getNumericValue());
+}
+
+// --- Image paints ---
+//
+// Where a page paints image XObjects: the current transformation matrix at
+// every `Do` of an image, through nested form XObjects. Only four operators
+// matter (q, Q, cm, Do), so each content stream is first reduced to those
+// (PaintOpCollector) and then interpreted with an explicit stack of frames,
+// one per content stream being drawn (ImagePaintReader). That keeps form
+// nesting off the small WASM call stack and parses a form once however often
+// it is drawn.
+//
+// The result is facts or an error, never a guess: content that viewers do
+// not treat alike (a `cm` without exactly six numbers, a form that draws
+// itself, anything qpdf's parser complains about) fails the page.
+
+// Thrown for content whose paints cannot be told.
+struct UnreadableContent : std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
+
+struct PaintOp {
+    enum class Kind { Save, Restore, Concat, Draw };
+    Kind kind;
+    QPDFMatrix matrix;  // Concat
+    std::string name;   // Draw: resource name with its leading slash
+};
+
+// Reduces one content stream to its PaintOps.
+class PaintOpCollector : public QPDFObjectHandle::ParserCallbacks {
+public:
+    explicit PaintOpCollector(std::vector<PaintOp>& ops) : ops_(ops) {}
+
+    void handleObject(QPDFObjectHandle obj, size_t, size_t) override {
+        if (!obj.isOperator()) {
+            operands_.push_back(obj);
+            return;
+        }
+        std::string const op = obj.getOperatorValue();
+        if (op == "q") {
+            ops_.push_back({PaintOp::Kind::Save, {}, {}});
+        } else if (op == "Q") {
+            ops_.push_back({PaintOp::Kind::Restore, {}, {}});
+        } else if (op == "cm") {
+            ops_.push_back({PaintOp::Kind::Concat, concatOperand(), {}});
+        } else if (op == "Do" && operands_.size() == 1 && operands_[0].isName()) {
+            // Any other operand names no XObject: nothing is painted.
+            ops_.push_back({PaintOp::Kind::Draw, {}, operands_[0].getName()});
+        }
+        operands_.clear();
+    }
+
+    void handleEOF() override {}
+
+private:
+    QPDFMatrix concatOperand() const {
+        bool sixNumbers = operands_.size() == 6 &&
+            std::all_of(operands_.begin(), operands_.end(), [](QPDFObjectHandle const& o) { return o.isNumber(); });
+        if (!sixNumbers) {
+            throw UnreadableContent("cm operator without exactly six numeric operands");
+        }
+        return QPDFMatrix(
+            operands_[0].getNumericValue(), operands_[1].getNumericValue(), operands_[2].getNumericValue(),
+            operands_[3].getNumericValue(), operands_[4].getNumericValue(), operands_[5].getNumericValue());
+    }
+
+    std::vector<PaintOp>& ops_;
+    std::vector<QPDFObjectHandle> operands_;
+};
+
+struct ImagePaint {
+    QPDFObjGen image;
+    QPDFMatrix matrix;
+};
+
+// Collects the image paints of one page.
+class ImagePaintReader {
+public:
+    // More XObject draws than this on one page fail the page: forms that
+    // draw forms multiply, and the answer would not fit in memory.
+    static constexpr size_t maxDraws = 100000;
+
+    explicit ImagePaintReader(QPDFPageObjectHelper page) : page_(page) {}
+
+    std::vector<ImagePaint> read() {
+        QPDFObjectHandle pageXObjects = xobjectsOf(page_.getAttribute("/Resources", false));
+        std::vector<PaintOp> pageOps;
+        parse(page_, pageOps);
+
+        std::vector<ImagePaint> paints;
+        std::vector<Frame> frames;
+        frames.push_back({&pageOps, 0, pageXObjects, QPDFMatrix(), {}, QPDFObjGen()});
+        size_t draws = 0;
+        while (!frames.empty()) {
+            // Indexed access: drawing a form appends to `frames`.
+            size_t const current = frames.size() - 1;
+            if (frames[current].next == frames[current].ops->size()) {
+                frames.pop_back();  // the graphics state of a form ends with it
+                continue;
+            }
+            PaintOp const& op = (*frames[current].ops)[frames[current].next++];
+            switch (op.kind) {
+            case PaintOp::Kind::Save:
+                frames[current].saved.push_back(frames[current].ctm);
+                break;
+            case PaintOp::Kind::Restore:
+                // A Q without q restores nothing (as in every viewer).
+                if (!frames[current].saved.empty()) {
+                    frames[current].ctm = frames[current].saved.back();
+                    frames[current].saved.pop_back();
+                }
+                break;
+            case PaintOp::Kind::Concat:
+                frames[current].ctm.concat(op.matrix);
+                break;
+            case PaintOp::Kind::Draw: {
+                QPDFObjectHandle xobject = frames[current].xobjects.getKeyIfDict(op.name);
+                bool isForm = xobject.isFormXObject();
+                if (!isForm && !xobject.isImage(false)) {
+                    break;  // not a resource, or an XObject that is neither: nothing is painted
+                }
+                if (++draws > maxDraws) {
+                    throw UnreadableContent("more than " + std::to_string(maxDraws) + " XObjects are drawn");
+                }
+                if (isForm) {
+                    frames.push_back(enter(xobject, frames[current].ctm, pageXObjects, frames));
+                } else {
+                    paints.push_back({xobject.getObjGen(), frames[current].ctm});
+                }
+                break;
+            }
+            }
+        }
+        return paints;
+    }
+
+private:
+    // One content stream being interpreted, with its own graphics state.
+    struct Frame {
+        std::vector<PaintOp> const* ops;
+        size_t next;
+        QPDFObjectHandle xobjects;  // the /XObject resources its names refer to
+        QPDFMatrix ctm;
+        std::vector<QPDFMatrix> saved;
+        QPDFObjGen form;  // null for the page
+    };
+
+    // The /XObject dictionary of a resource dictionary (null when either is missing).
+    static QPDFObjectHandle xobjectsOf(QPDFObjectHandle const& resources) {
+        return resources.getKeyIfDict("/XObject");
+    }
+
+    void parse(QPDFPageObjectHelper content, std::vector<PaintOp>& ops) {
+        PaintOpCollector collector(ops);
+        content.parseContents(&collector);
+    }
+
+    // The frame for drawing `form` under `ctm`. A form without
+    // /Resources uses the page's (ISO 32000-1 §7.8.3).
+    Frame enter(QPDFObjectHandle form, QPDFMatrix const& ctm, QPDFObjectHandle const& pageXObjects,
+                std::vector<Frame> const& frames) {
+        QPDFObjGen og = form.getObjGen();
+        std::string const name = "form XObject " + og.unparse(' ');
+        for (Frame const& open : frames) {
+            if (open.form == og) {
+                throw UnreadableContent(name + " draws itself");
+            }
+        }
+        QPDFObjectHandle dict = form.getDict();
+        QPDFMatrix formCtm = ctm;
+        QPDFObjectHandle matrix = dict.getKey("/Matrix");
+        if (matrix.isMatrix()) {
+            formCtm.concat(QPDFMatrix(matrix.getArrayAsMatrix()));
+        } else if (!matrix.isNull()) {
+            throw UnreadableContent(name + ": /Matrix is not an array of six numbers");
+        }
+        auto parsed = formOps_.find(og);
+        if (parsed == formOps_.end()) {
+            parsed = formOps_.emplace(og, std::vector<PaintOp>()).first;
+            parse(QPDFPageObjectHelper(form), parsed->second);
+        }
+        QPDFObjectHandle resources = dict.getKey("/Resources");
+        return {&parsed->second, 0, resources.isDictionary() ? xobjectsOf(resources) : pageXObjects,
+                formCtm, {}, og};
+    }
+
+    QPDFPageObjectHelper page_;
+    std::map<QPDFObjGen, std::vector<PaintOp>> formOps_;  // node-based: pointers into it stay valid
+};
+
 // --- Main wrapper class ---
 
 class QpdfWasmWrapper {
@@ -1065,20 +1264,14 @@ public:
     }
 
     /**
-     * Facts of one page: {index, mediaBox: {x, y, width, height}, rotate}.
-     * /MediaBox and /Rotate are inherited through the page tree. qpdf repairs
-     * a missing or malformed /MediaBox to Letter while reading the page tree
-     * (with a warning); the repaired value is what is reported.
+     * Facts of one page: {index, mediaBox: {x, y, width, height}, rotate,
+     * userUnit}. /MediaBox and /Rotate are inherited through the page tree,
+     * /UserUnit is not. qpdf repairs a missing or malformed /MediaBox to
+     * Letter while reading the page tree (with a warning); the repaired
+     * value is what is reported.
      */
     val getPageInfo(int index) {
-        return withDocument([&]() {
-            auto pages = QPDFPageDocumentHelper(*qpdf_).getAllPages();
-            if (index < 0 || static_cast<size_t>(index) >= pages.size()) {
-                return makeError("Page index " + std::to_string(index) + " out of range (0 to " +
-                                     std::to_string(pages.size()) + " exclusive)",
-                                 "invalid_argument");
-            }
-            QPDFPageObjectHelper& page = pages[static_cast<size_t>(index)];
+        return withPage(index, [&](QPDFPageObjectHelper& page) {
             QPDFObjectHandle mediaBox = page.getMediaBox(false);
             if (!mediaBox.isRectangle()) {
                 // Unreachable after qpdf's repair; reported rather than invented
@@ -1088,7 +1281,51 @@ public:
             info.set("index", index);
             info.set("mediaBox", rectangleFact(mediaBox));
             info.set("rotate", rotateFact(page.getAttribute("/Rotate", false)));
+            info.set("userUnit", userUnitFact(page.getObjectHandle().getKey("/UserUnit")));
             return info;
+        });
+    }
+
+    /**
+     * Where one page paints image XObjects (stencil masks included): a JS
+     * array of {ref: {objId, generation}, matrix: [a, b, c, d, e, f]} in
+     * paint order, `matrix` being the current transformation matrix at the
+     * `Do` operator. Covers the page's content streams and the form XObjects
+     * they draw, nested.
+     *
+     * Fails instead of reporting some of the paints when the content cannot
+     * be read reliably (see "Image paints" above). Whatever stops the
+     * reading, a qpdf error, a decoder error or a qpdf warning, is the same
+     * outcome for the caller and is reported as damaged_pdf.
+     */
+    val getImagePaints(int index) {
+        return withPage(index, [&](QPDFPageObjectHelper& page) {
+            auto unreadable = [index](std::string const& reason) {
+                return makeError("Page " + std::to_string(index) + ": content cannot be read: " + reason,
+                                 "damaged_pdf");
+            };
+            size_t const warningsBefore = qpdf_->numWarnings();
+            std::vector<ImagePaint> paints;
+            try {
+                paints = ImagePaintReader(page).read();
+            } catch (std::runtime_error const& e) {
+                return unreadable(e.what());
+            }
+            if (qpdf_->numWarnings() > warningsBefore) {
+                // qpdf recovered from something in the content; what it skipped is unknown.
+                return unreadable(qpdf_->getWarnings().at(warningsBefore).what());
+            }
+            return toJsArray(paints, [](ImagePaint const& paint) {
+                QPDFObjectHandle::Matrix m = paint.matrix.getAsMatrix();
+                val matrix = val::array();
+                for (double value : {m.a, m.b, m.c, m.d, m.e, m.f}) {
+                    matrix.call<void>("push", value);
+                }
+                val entry = val::object();
+                entry.set("ref", objRef(paint.image));
+                entry.set("matrix", matrix);
+                return entry;
+            });
         });
     }
 
@@ -1108,6 +1345,20 @@ private:
             return makeNoPdfError();
         }
         return guarded(body);
+    }
+
+    // Runs `body` on the page at a 0-based index; invalid_argument when out of range.
+    template <typename Body>
+    val withPage(int index, Body&& body) {
+        return withDocument([&]() {
+            auto pages = QPDFPageDocumentHelper(*qpdf_).getAllPages();
+            if (index < 0 || static_cast<size_t>(index) >= pages.size()) {
+                return makeError("Page index " + std::to_string(index) + " out of range (0 to " +
+                                     std::to_string(pages.size()) + " exclusive)",
+                                 "invalid_argument");
+            }
+            return body(pages[static_cast<size_t>(index)]);
+        });
     }
 
     // Loads a PDF; password == nullptr means no password.
@@ -1178,5 +1429,6 @@ EMSCRIPTEN_BINDINGS(qpdf_wrapper) {
         .function("readImage", &QpdfWasmWrapper::readImage)
         .function("close", &QpdfWasmWrapper::close)
         .function("getPageCount", &QpdfWasmWrapper::getPageCount)
-        .function("getPageInfo", &QpdfWasmWrapper::getPageInfo);
+        .function("getPageInfo", &QpdfWasmWrapper::getPageInfo)
+        .function("getImagePaints", &QpdfWasmWrapper::getImagePaints);
 }

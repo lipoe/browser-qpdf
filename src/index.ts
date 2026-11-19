@@ -2,7 +2,7 @@
  * @module @lipoe/browser-qpdf
  *
  * Browser-compatible WASM module exposing qpdf's library API for reading
- * and replacing PDF image streams.
+ * and replacing PDF image streams, and for page facts and image paints.
  *
  * Usage:
  * ```typescript
@@ -29,6 +29,7 @@ import type {
     EncodedImage,
     ImageInfo,
     ImageMetadata,
+    ImagePaint,
     PageInfo,
     WriteOptions,
 } from './types.js';
@@ -58,6 +59,7 @@ export type {
     ImageEncoding,
     EncodedImage,
     PageInfo,
+    ImagePaint,
     ImageMetadata,
     PdfDocument,
     QpdfImageStreams,
@@ -326,6 +328,18 @@ export async function createQpdfImageStreams(
                                 () => wrapper.getPageInfo(index),
                                 (value) => value as PageInfo,
                                 'Failed to get page info'
+                            )
+                    );
+                },
+
+                getImagePaints(pageIndex: number): Result<ImagePaint[]> {
+                    return withDocument(
+                        () =>
+                            validatePageIndex(pageIndex) ??
+                            callRaw(
+                                () => wrapper.getImagePaints(pageIndex),
+                                (value) => value as ImagePaint[],
+                                'Failed to get image paints'
                             )
                     );
                 },

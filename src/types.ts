@@ -202,6 +202,27 @@ export interface PageInfo {
     mediaBox: { x: number; y: number; width: number; height: number };
     /** Inherited /Rotate normalised; 0 when absent (spec default); null when not a multiple of 90 */
     rotate: 0 | 90 | 180 | 270 | null;
+    /**
+     * /UserUnit: the size of one user space unit in 1/72 inch. 1 when absent
+     * (spec default); null when not a positive number. Not inherited.
+     */
+    userUnit: number | null;
+}
+
+/**
+ * One painting of an image XObject on a page: which image, and the current
+ * transformation matrix at its `Do` operator. The library reports the
+ * matrix as the content defines it and derives nothing from it.
+ */
+export interface ImagePaint {
+    /** The painted image; an entry of `getImages({ recursive: true })`. */
+    ref: ObjRef;
+    /**
+     * `[a, b, c, d, e, f]`: maps the image's unit square into the page's
+     * user space (`x' = a·x + c·y + e`, `y' = b·x + d·y + f`). /Rotate is
+     * not applied; units are user space units (see `PageInfo.userUnit`).
+     */
+    matrix: [number, number, number, number, number, number];
 }
 
 /**
@@ -236,7 +257,8 @@ export interface WriteOptions {
 
 /**
  * Handle to a loaded PDF document. Provides methods for image enumeration,
- * stream reading/replacement, PDF writing, and resource cleanup.
+ * stream reading/replacement, page facts, image paints, PDF writing, and
+ * resource cleanup.
  */
 export interface PdfDocument {
     /**
@@ -267,6 +289,24 @@ export interface PdfDocument {
     getPageCount(): Result<number>;
     /** Facts of the page at a 0-based index; `INVALID_INPUT` when out of range. */
     getPageInfo(index: number): Result<PageInfo>;
+    /**
+     * Where the page at a 0-based index paints image XObjects (stencil masks
+     * included), in paint order: the page's content streams and the form
+     * XObjects they draw, nested. An image painted several times has several
+     * entries; an image that is only a resource has none.
+     *
+     * All paints or an error, never some of them: fails with `INVALID_INPUT`
+     * when the index is out of range and when the content cannot be read
+     * reliably (undecodable or syntactically damaged content, a `cm` without
+     * exactly six numbers, a form XObject that draws itself or has a
+     * malformed /Matrix, more than 100,000 XObject draws). Other pages are
+     * unaffected.
+     *
+     * Not reported: inline images, and images painted through tiling
+     * patterns, Type 3 glyphs, annotation appearances or soft-mask groups.
+     * Clipping and optional content (layer visibility) are not evaluated.
+     */
+    getImagePaints(pageIndex: number): Result<ImagePaint[]>;
     /**
      * Replace image stream content and optionally update metadata.
      * Omitted metadata fields preserve original values.
