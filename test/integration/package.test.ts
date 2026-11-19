@@ -42,6 +42,7 @@ import {
     type ImageEncoding,
     type ImageInfo,
     type ImageMaskInfo,
+    type ImagePaint,
     type ImageMetadata,
     type ObjRef,
     type PageInfo,
@@ -123,6 +124,13 @@ export async function decryptPdf(bytes: Uint8Array, password: string): Promise<R
     const pages: Result<number> = doc.getPageCount();
     const page: Result<PageInfo> = doc.getPageInfo(0);
     if (page.ok) { const box: { x: number; width: number } = page.value.mediaBox; void box; }
+    const userUnit: number | null = page.ok ? page.value.userUnit : null;
+    const paints: Result<ImagePaint[]> = doc.getImagePaints(0);
+    if (paints.ok && paints.value.length > 0) {
+        const ref: ObjRef = paints.value[0].ref;
+        const [a, b, c, d, e, f]: number[] = paints.value[0].matrix;
+        void [ref, a, b, c, d, e, f, userUnit];
+    }
     void pages;
     void codeOf(encrypted);
     void knownCodes;

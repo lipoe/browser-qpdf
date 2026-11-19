@@ -95,17 +95,19 @@ function pages(kids, extra = '') {
 /**
  * Page object.
  * @param {object} p
- * @param {number} p.contents - content stream object number
+ * @param {number|number[]} p.contents - content stream object number, or several for a /Contents array
  * @param {string} [p.resources] - inner resource dictionary entries, e.g. '/XObject << /Im1 5 0 R >>'
  * @param {string|null} [p.mediaBox] - MediaBox array; null omits the key (inherit or absent)
  * @param {number|null} [p.rotate] - /Rotate value; null omits the key
  * @param {number} [p.parent] - parent node object number (default 2)
+ * @param {string|null} [p.userUnit] - /UserUnit value as PDF syntax; null omits the key
  */
-function page({ contents, resources = '', mediaBox = '[0 0 612 792]', rotate = null, parent = 2 }) {
+function page({ contents, resources = '', mediaBox = '[0 0 612 792]', rotate = null, parent = 2, userUnit = null }) {
   const parts = [`/Type /Page`, `/Parent ${ref(parent)}`];
   if (mediaBox !== null) parts.push(`/MediaBox ${mediaBox}`);
   if (rotate !== null) parts.push(`/Rotate ${rotate}`);
-  parts.push(`/Contents ${ref(contents)}`);
+  if (userUnit !== null) parts.push(`/UserUnit ${userUnit}`);
+  parts.push(`/Contents ${Array.isArray(contents) ? `[${contents.map(ref).join(' ')}]` : ref(contents)}`);
   if (resources) parts.push(`/Resources << ${resources} >>`);
   return `<< ${parts.join(' ')} >>`;
 }
@@ -637,6 +639,190 @@ function generateInheritedResources3Pages() {
 }
 
 // ---------------------------------------------------------------------------
+// Fixtures added for 0.4.0 (image paints, /UserUnit)
+// ---------------------------------------------------------------------------
+
+const RGB_IMAGE = '/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceRGB';
+const GRAY_IMAGE = '/Width 2 /Height 2 /BitsPerComponent 8 /ColorSpace /DeviceGray';
+const GRAY_2X2 = Buffer.alloc(2 * 2, 0xBB);
+
+/**
+ * /UserUnit: page 0 has 2, page 1 none (default 1; the page tree root's
+ * /UserUnit 3 is not inherited), page 2 has 1.5, pages 3 to 5 have the
+ * invalid values 0, a string and -1. No images.
+ */
+function generateUserUnit() {
+  return buildPdf([
+    catalog(),
+    pages([3, 4, 5, 6, 7, 8], '/UserUnit 3'),
+    page({ contents: 9, userUnit: '2' }),
+    page({ contents: 9 }),
+    page({ contents: 9, userUnit: '1.5' }),
+    page({ contents: 9, userUnit: '0' }),
+    page({ contents: 9, userUnit: '(two)' }),
+    page({ contents: 9, userUnit: '-1' }),
+    contentStream(drawText()),
+  ]);
+}
+
+/**
+ * The graphics state operators that decide where an image is painted: `cm`
+ * concatenates, `q`/`Q` save and restore (nested), a rotation, and one image
+ * painted several times. Im1 is object 5, Im2 object 6.
+ */
+function generatePaintTransforms() {
+  const content = [
+    'q 0.5 0 0 0.25 8 4 cm /Im2 Do Q',
+    'q 2 0 0 2 10 20 cm',
+    'q 50 0 0 30 5 5 cm /Im1 Do Q',
+    '/Im2 Do',
+    'Q',
+    '/Im1 Do',
+    '0 1 -1 0 300 400 cm',
+    '100 0 0 50 0 0 cm /Im1 Do',
+  ].join('\n');
+  return singlePagePdf(`/XObject << /Im1 ${ref(5)} /Im2 ${ref(6)} >>`, content, [
+    imageXObject(RGB_IMAGE, RGB_2X2),
+    imageXObject(GRAY_IMAGE, GRAY_2X2),
+  ]);
+}
+
+/**
+ * Form XObjects: Fm1 (5) has a /Matrix, is drawn twice and leaves an
+ * unbalanced `q ... cm` behind; it draws Im1 (8), the nested Fm2 (6, own
+ * resources, a `cm` outside any `q`) and Im1 again. Fm3 (7) has a /Matrix
+ * and no /Resources, so its /Im1 is looked up in the page's resources.
+ * Im2 is object 9.
+ */
+function generatePaintForms() {
+  const pageContent = [
+    'q 1 0 0 1 100 200 cm /Fm1 Do Q',
+    'q 3 0 0 3 0 0 cm /Fm1 Do Q',
+    '/Fm3 Do',
+    '/Im1 Do',
+  ].join('\n');
+  return buildPdf([
+    catalog(),
+    pages([3]),
+    page({ contents: 4, resources: `/XObject << /Fm1 ${ref(5)} /Fm3 ${ref(7)} /Im1 ${ref(8)} >>` }),
+    contentStream(pageContent),
+    formXObject(
+      `/BBox [0 0 100 100] /Matrix [2 0 0 2 0 0] /Resources << /XObject << /Im1 ${ref(8)} /Fm2 ${ref(6)} >> >>`,
+      'q 10 0 0 10 1 1 cm /Im1 Do Q /Fm2 Do /Im1 Do q 5 0 0 5 0 0 cm'
+    ),
+    formXObject(`/BBox [0 0 100 100] /Resources << /XObject << /Im2 ${ref(9)} >> >>`, '4 0 0 8 0 0 cm /Im2 Do'),
+    formXObject('/BBox [0 0 10 10] /Matrix [1 0 0 1 7 9]', '/Im1 Do'),
+    imageXObject(RGB_IMAGE, RGB_2X2),
+    imageXObject(GRAY_IMAGE, GRAY_2X2),
+  ]);
+}
+
+/**
+ * Content that paints nothing or is tolerated the same way by every viewer:
+ * /Contents is an array of two streams (the `q ... cm` of the first is still
+ * in effect in the second), a `Q` without `q`, `Do` of a name that is not a
+ * resource, of an XObject that is neither image nor form (8) and with an
+ * operand that is not a name, and an inline image. Im1 (6) and the stencil
+ * mask (9) are painted; Im2 (7) is a resource that is never painted.
+ */
+function generatePaintContentTolerance() {
+  const resources = `/XObject << /Im1 ${ref(6)} /Im2 ${ref(7)} /Ps1 ${ref(8)} /Mask1 ${ref(9)} >>`;
+  return buildPdf([
+    catalog(),
+    pages([3]),
+    page({ contents: [4, 5], resources }),
+    contentStream('q 10 0 0 10 0 0 cm'),
+    contentStream('/Im1 Do Q Q /Missing Do /Ps1 Do (Im1) Do BI /W 1 /H 1 /CS /G /BPC 8 ID A EI /Mask1 Do'),
+    imageXObject(RGB_IMAGE, RGB_2X2),
+    imageXObject(GRAY_IMAGE, GRAY_2X2),
+    stream('/Type /XObject /Subtype /PS', '% not painted'),
+    imageXObject('/Width 2 /Height 2 /ImageMask true /BitsPerComponent 1', Buffer.from([0x80, 0x40])),
+  ]);
+}
+
+/**
+ * `cm` whose operands are not exactly six numbers: four numbers (page 0), a
+ * name among them (page 1), seven numbers (page 2). Page 3 is well-formed.
+ * Im1 is object 11.
+ */
+function generatePaintMalformedOperands() {
+  const resources = `/XObject << /Im1 ${ref(11)} >>`;
+  return buildPdf([
+    catalog(),
+    pages([3, 4, 5, 6]),
+    page({ contents: 7, resources }),
+    page({ contents: 8, resources }),
+    page({ contents: 9, resources }),
+    page({ contents: 10, resources }),
+    contentStream('1 0 0 1 cm /Im1 Do'),
+    contentStream('1 0 0 1 0 /X cm /Im1 Do'),
+    contentStream('1 0 0 1 0 0 0 cm /Im1 Do'),
+    contentStream(drawImage('Im1')),
+    imageXObject(RGB_IMAGE, RGB_2X2),
+  ]);
+}
+
+/**
+ * Form XObjects whose paints cannot be told: a form that draws itself
+ * (page 0, Fm1 = 13), two forms that draw each other (page 1, Fm2 = 14 and
+ * Fm3 = 15), a /Matrix that is not six numbers (page 2, Fm4 = 16) and five
+ * levels of forms that each draw the next ten times, 1,111,110 draws in all
+ * (page 3, Fm5 to Fm9 = 17 to 21). Page 4 draws the well-formed Fm10 (22).
+ * Im1 is object 23.
+ */
+function generatePaintUnreadableForms() {
+  const xobjects = (entries) => `/XObject << ${entries} >>`;
+  const form = (resources, content, extra = '') =>
+    formXObject(`/BBox [0 0 100 100]${extra} /Resources << ${xobjects(resources)} >>`, content);
+  const tenTimes = (name) => Array(10).fill(`/${name} Do`).join(' ');
+  return buildPdf([
+    catalog(),
+    pages([3, 4, 5, 6, 7]),
+    page({ contents: 8, resources: xobjects(`/Fm1 ${ref(13)}`) }),
+    page({ contents: 9, resources: xobjects(`/Fm2 ${ref(14)}`) }),
+    page({ contents: 10, resources: xobjects(`/Fm4 ${ref(16)}`) }),
+    page({ contents: 11, resources: xobjects(`/Fm5 ${ref(17)}`) }),
+    page({ contents: 12, resources: xobjects(`/Fm10 ${ref(22)}`) }),
+    contentStream('/Fm1 Do'),
+    contentStream('/Fm2 Do'),
+    contentStream('/Fm4 Do'),
+    contentStream(tenTimes('Fm5')),
+    contentStream('/Fm10 Do'),
+    form(`/Im1 ${ref(23)} /Fm1 ${ref(13)}`, '/Im1 Do 2 0 0 2 0 0 cm /Fm1 Do'),
+    form(`/Im1 ${ref(23)} /Fm3 ${ref(15)}`, '/Im1 Do /Fm3 Do'),
+    form(`/Fm2 ${ref(14)}`, '2 0 0 2 0 0 cm /Fm2 Do'),
+    form(`/Im1 ${ref(23)}`, '/Im1 Do', ' /Matrix [1 0 0 1]'),
+    form(`/Fm6 ${ref(18)}`, tenTimes('Fm6')),
+    form(`/Fm7 ${ref(19)}`, tenTimes('Fm7')),
+    form(`/Fm8 ${ref(20)}`, tenTimes('Fm8')),
+    form(`/Fm9 ${ref(21)}`, tenTimes('Fm9')),
+    form(`/Im1 ${ref(23)}`, tenTimes('Im1')),
+    form(`/Im1 ${ref(23)}`, '/Im1 Do'),
+    imageXObject(RGB_IMAGE, RGB_2X2),
+  ]);
+}
+
+/**
+ * Content that cannot be read: a content stream whose Flate data is damaged
+ * (page 0) and one with a syntax error, an unterminated string (page 1).
+ * Page 2 is well-formed. Im1 is object 9.
+ */
+function generatePaintUnreadableContent() {
+  const resources = `/XObject << /Im1 ${ref(9)} >>`;
+  return buildPdf([
+    catalog(),
+    pages([3, 4, 5]),
+    page({ contents: 6, resources }),
+    page({ contents: 7, resources }),
+    page({ contents: 8, resources }),
+    stream('/Filter /FlateDecode', Buffer.from('this is not zlib data')),
+    contentStream(`${drawImage('Im1')} (unterminated`),
+    contentStream(drawImage('Im1')),
+    imageXObject(RGB_IMAGE, RGB_2X2),
+  ]);
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -680,6 +866,14 @@ const fixtures = [
   { name: 'smask-shared.pdf', generate: generateSmaskShared },
   { name: 'smask-not-an-image.pdf', generate: generateSmaskNotAnImage },
   { name: 'inherited-resources-3-pages.pdf', generate: generateInheritedResources3Pages },
+  // 0.4.0
+  { name: 'user-unit.pdf', generate: generateUserUnit },
+  { name: 'paint-transforms.pdf', generate: generatePaintTransforms },
+  { name: 'paint-forms.pdf', generate: generatePaintForms },
+  { name: 'paint-content-tolerance.pdf', generate: generatePaintContentTolerance },
+  { name: 'paint-malformed-operands.pdf', generate: generatePaintMalformedOperands },
+  { name: 'paint-unreadable-forms.pdf', generate: generatePaintUnreadableForms },
+  { name: 'paint-unreadable-content.pdf', generate: generatePaintUnreadableContent },
 ];
 
 for (const fixture of fixtures) {

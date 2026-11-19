@@ -8,6 +8,7 @@ import * as codecs from '../../dist/codecs/index.js';
 import { runEncryptionScenarios } from '../scenarios/encryption-scenarios.mjs';
 import { runCatalogScenarios } from '../scenarios/catalog-scenarios.mjs';
 import { runCodecScenarios } from '../scenarios/codec-scenarios.mjs';
+import { runPaintScenarios } from '../scenarios/paint-scenarios.mjs';
 
 const FIXTURES_URL = new URL('../fixtures/', import.meta.url);
 
@@ -27,6 +28,7 @@ export const SUITES = {
         runEncryptionScenarios(api, await readManifest('encrypted-manifest.json'), readFixture),
     catalog: async (api) => runCatalogScenarios(api, await readManifest('manifest.json'), readFixture),
     codecs: async (api) => runCodecScenarios(api, codecs, await readManifest('manifest.json'), readFixture),
+    paints: async (api) => runPaintScenarios(api, await readManifest('paint-manifest.json'), readFixture),
 };
 
 export async function runSuite(name) {

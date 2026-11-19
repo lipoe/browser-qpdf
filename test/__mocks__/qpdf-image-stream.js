@@ -20,6 +20,7 @@ export const mockWasm = {
     close: null,
     getPageCount: null,
     getPageInfo: null,
+    getImagePaints: null,
     delete: null,
 };
 
@@ -50,7 +51,11 @@ class MockQpdfWasmWrapper {
     }
     getPageInfo(index) {
         if (mockWasm.getPageInfo) return mockWasm.getPageInfo(index);
-        return { index, mediaBox: { x: 0, y: 0, width: 1, height: 1 }, rotate: 0 };
+        return { index, mediaBox: { x: 0, y: 0, width: 1, height: 1 }, rotate: 0, userUnit: 1 };
+    }
+    getImagePaints(index) {
+        if (mockWasm.getImagePaints) return mockWasm.getImagePaints(index);
+        return [];
     }
     replaceImageStream(objId, gen, data, metadata) {
         if (mockWasm.replaceImageStream) return mockWasm.replaceImageStream(objId, gen, data, metadata);

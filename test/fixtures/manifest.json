@@ -6,7 +6,7 @@
     "order": "expectedImages are listed in ascending (objId, generation) order, which is the order getImages() returns (since 0.3.0)",
     "lookup": "colorSpaceInfo.lookup is a plain number array here; the library returns a Uint8Array",
     "encoding": "ImageInfo.encoding as the filter chain declares it (null: more than one filter after the codec); readImage() reports the same object. encodedLength: readImage() data length; null means readImage fails (unknown or damaged container filter, or undescribable chain)",
-    "pageInfos": "getPageInfo(i) for every page; a missing /MediaBox is reported as qpdf repairs it (Letter)",
+    "pageInfos": "getPageInfo(i) for every page; a missing /MediaBox is reported as qpdf repairs it (Letter); userUnit is 1 when /UserUnit is absent",
     "closure": "since 0.3.1 the catalog is closed under mask references: image XObjects named in /SMask or stream /Mask are entries with pages [] and directPages []"
   },
   "fixtures": {
@@ -64,7 +64,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -189,7 +190,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         },
         {
           "index": 1,
@@ -199,7 +201,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -220,7 +223,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -280,7 +284,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -410,7 +415,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -509,7 +515,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -608,7 +615,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -666,7 +674,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -723,7 +732,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -823,7 +833,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -949,7 +960,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -1059,7 +1071,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -1122,7 +1135,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -1182,7 +1196,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -1240,7 +1255,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -1305,7 +1321,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -1367,7 +1384,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -1424,7 +1442,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -1485,7 +1504,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         },
         {
           "index": 1,
@@ -1495,7 +1515,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         },
         {
           "index": 2,
@@ -1505,7 +1526,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -1527,7 +1549,8 @@
             "width": 400,
             "height": 300
           },
-          "rotate": 90
+          "rotate": 90,
+          "userUnit": 1
         },
         {
           "index": 1,
@@ -1537,7 +1560,8 @@
             "width": 400,
             "height": 300
           },
-          "rotate": 90
+          "rotate": 90,
+          "userUnit": 1
         },
         {
           "index": 2,
@@ -1547,7 +1571,8 @@
             "width": 400,
             "height": 300
           },
-          "rotate": null
+          "rotate": null,
+          "userUnit": 1
         },
         {
           "index": 3,
@@ -1557,7 +1582,8 @@
             "width": 400,
             "height": 300
           },
-          "rotate": 270
+          "rotate": 270,
+          "userUnit": 1
         }
       ]
     },
@@ -1578,7 +1604,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -1636,7 +1663,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ]
     },
@@ -1691,7 +1719,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ],
       "facts": [
@@ -1751,7 +1780,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ],
       "facts": [
@@ -1809,7 +1839,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ],
       "facts": [
@@ -1867,7 +1898,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ],
       "facts": [
@@ -1961,7 +1993,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ],
       "facts": [
@@ -2058,7 +2091,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ],
       "facts": [
@@ -2152,7 +2186,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ],
       "facts": [
@@ -2249,7 +2284,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ],
       "facts": [
@@ -2384,7 +2420,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ],
       "facts": [
@@ -2444,7 +2481,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ],
       "facts": [
@@ -2504,7 +2542,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         },
         {
           "index": 1,
@@ -2514,7 +2553,8 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         },
         {
           "index": 2,
@@ -2524,12 +2564,90 @@
             "width": 612,
             "height": 792
           },
-          "rotate": 0
+          "rotate": 0,
+          "userUnit": 1
         }
       ],
       "facts": [
         "pages is reachable, not painted (superset)",
         "0.4: painted images [0, 2]"
+      ]
+    },
+    "user-unit.pdf": {
+      "description": "Page 0: /UserUnit 2. Page 1: no /UserUnit (default 1; the page tree root has /UserUnit 3, which is not inherited). Page 2: /UserUnit 1.5. Pages 3 to 5: invalid values (0, a string, -1). No images.",
+      "pageCount": 6,
+      "expectedImages": [],
+      "totalImageCount": 0,
+      "pageInfos": [
+        {
+          "index": 0,
+          "mediaBox": {
+            "x": 0,
+            "y": 0,
+            "width": 612,
+            "height": 792
+          },
+          "rotate": 0,
+          "userUnit": 2
+        },
+        {
+          "index": 1,
+          "mediaBox": {
+            "x": 0,
+            "y": 0,
+            "width": 612,
+            "height": 792
+          },
+          "rotate": 0,
+          "userUnit": 1
+        },
+        {
+          "index": 2,
+          "mediaBox": {
+            "x": 0,
+            "y": 0,
+            "width": 612,
+            "height": 792
+          },
+          "rotate": 0,
+          "userUnit": 1.5
+        },
+        {
+          "index": 3,
+          "mediaBox": {
+            "x": 0,
+            "y": 0,
+            "width": 612,
+            "height": 792
+          },
+          "rotate": 0,
+          "userUnit": null
+        },
+        {
+          "index": 4,
+          "mediaBox": {
+            "x": 0,
+            "y": 0,
+            "width": 612,
+            "height": 792
+          },
+          "rotate": 0,
+          "userUnit": null
+        },
+        {
+          "index": 5,
+          "mediaBox": {
+            "x": 0,
+            "y": 0,
+            "width": 612,
+            "height": 792
+          },
+          "rotate": 0,
+          "userUnit": null
+        }
+      ],
+      "facts": [
+        "getPageInfo userUnit (explicit, absent and not inherited, real, invalid)"
       ]
     }
   }

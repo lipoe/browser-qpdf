@@ -1,0 +1,145 @@
+{
+  "description": "Expected getImagePaints(i) for every page of the listed fixtures: the paints in paint order, or the error code when the page's content cannot be read. Checked in Node, in a browser page and in a Web Worker (test/scenarios/paint-scenarios.mjs). The matrices are worked out by hand from the content streams in generate-fixtures.mjs, never taken from the binary.",
+  "conventions": {
+    "ref": "object number of the painted image XObject; fixtures number their objects from 1 in the order generate-fixtures.mjs lists them",
+    "matrix": "[a b c d e f]: the current transformation matrix at the Do operator. `m cm` replaces the CTM by m x CTM; a form XObject is drawn with its /Matrix x CTM",
+    "error": "ErrorCode of a failed getImagePaints(i); the other pages of the document are unaffected"
+  },
+  "fixtures": {
+    "simple-one-image.pdf": {
+      "description": "One image, drawn once inside q ... Q.",
+      "pages": [
+        { "paints": [{ "ref": { "objId": 5, "generation": 0 }, "matrix": [100, 0, 0, 100, 50, 600] }] }
+      ]
+    },
+    "multi-image.pdf": {
+      "description": "Two images on page 0, one on page 1.",
+      "pages": [
+        {
+          "paints": [
+            { "ref": { "objId": 7, "generation": 0 }, "matrix": [100, 0, 0, 100, 50, 600] },
+            { "ref": { "objId": 8, "generation": 0 }, "matrix": [50, 0, 0, 50, 200, 600] }
+          ]
+        },
+        { "paints": [{ "ref": { "objId": 9, "generation": 0 }, "matrix": [100, 0, 0, 100, 50, 600] }] }
+      ]
+    },
+    "no-images.pdf": {
+      "description": "Text only.",
+      "pages": [{ "paints": [] }]
+    },
+    "nested-forms.pdf": {
+      "description": "An image on the page and one inside a form XObject without /Matrix, drawn at [200 0 0 200 250 400].",
+      "pages": [
+        {
+          "paints": [
+            { "ref": { "objId": 5, "generation": 0 }, "matrix": [100, 0, 0, 100, 50, 600] },
+            { "ref": { "objId": 7, "generation": 0 }, "matrix": [200, 0, 0, 200, 250, 400] }
+          ]
+        }
+      ]
+    },
+    "smask-pair.pdf": {
+      "description": "A picture with a soft mask: the picture is painted, the mask (6) is not an operand of Do.",
+      "pages": [
+        { "paints": [{ "ref": { "objId": 5, "generation": 0 }, "matrix": [100, 0, 0, 100, 50, 600] }] }
+      ]
+    },
+    "shared-image-3-pages.pdf": {
+      "description": "Three pages share one content stream and one image.",
+      "pages": [
+        { "paints": [{ "ref": { "objId": 7, "generation": 0 }, "matrix": [100, 0, 0, 100, 50, 600] }] },
+        { "paints": [{ "ref": { "objId": 7, "generation": 0 }, "matrix": [100, 0, 0, 100, 50, 600] }] },
+        { "paints": [{ "ref": { "objId": 7, "generation": 0 }, "matrix": [100, 0, 0, 100, 50, 600] }] }
+      ]
+    },
+    "inherited-resources-3-pages.pdf": {
+      "description": "All three pages inherit a resource dictionary naming the image; only pages 0 and 2 paint it.",
+      "pages": [
+        { "paints": [{ "ref": { "objId": 7, "generation": 0 }, "matrix": [100, 0, 0, 100, 50, 600] }] },
+        { "paints": [] },
+        { "paints": [{ "ref": { "objId": 7, "generation": 0 }, "matrix": [100, 0, 0, 100, 50, 600] }] }
+      ]
+    },
+    "user-unit.pdf": {
+      "description": "No images; /UserUnit is a page fact and does not change the matrices.",
+      "pages": [
+        { "paints": [] },
+        { "paints": [] },
+        { "paints": [] },
+        { "paints": [] },
+        { "paints": [] },
+        { "paints": [] }
+      ]
+    },
+    "paint-transforms.pdf": {
+      "description": "cm concatenates, q/Q save and restore (nested), a rotation by 90 degrees; images painted several times. Im1 = 5, Im2 = 6.",
+      "pages": [
+        {
+          "paints": [
+            { "ref": { "objId": 6, "generation": 0 }, "matrix": [0.5, 0, 0, 0.25, 8, 4] },
+            { "ref": { "objId": 5, "generation": 0 }, "matrix": [100, 0, 0, 60, 20, 30] },
+            { "ref": { "objId": 6, "generation": 0 }, "matrix": [2, 0, 0, 2, 10, 20] },
+            { "ref": { "objId": 5, "generation": 0 }, "matrix": [1, 0, 0, 1, 0, 0] },
+            { "ref": { "objId": 5, "generation": 0 }, "matrix": [0, 100, -50, 0, 300, 400] }
+          ]
+        }
+      ]
+    },
+    "paint-forms.pdf": {
+      "description": "Fm1 (/Matrix [2 0 0 2 0 0]) drawn at [1 0 0 1 100 200] and at [3 0 0 3 0 0]; inside it Im1 (8), the nested Fm2 with Im2 (9), and Im1 again (Fm2's cm does not leak). Then Fm3 (/Matrix [1 0 0 1 7 9], no /Resources: page resources) and Im1 on the page (Fm1's unbalanced q ... cm does not leak).",
+      "pages": [
+        {
+          "paints": [
+            { "ref": { "objId": 8, "generation": 0 }, "matrix": [20, 0, 0, 20, 102, 202] },
+            { "ref": { "objId": 9, "generation": 0 }, "matrix": [8, 0, 0, 16, 100, 200] },
+            { "ref": { "objId": 8, "generation": 0 }, "matrix": [2, 0, 0, 2, 100, 200] },
+            { "ref": { "objId": 8, "generation": 0 }, "matrix": [60, 0, 0, 60, 6, 6] },
+            { "ref": { "objId": 9, "generation": 0 }, "matrix": [24, 0, 0, 48, 0, 0] },
+            { "ref": { "objId": 8, "generation": 0 }, "matrix": [6, 0, 0, 6, 0, 0] },
+            { "ref": { "objId": 8, "generation": 0 }, "matrix": [1, 0, 0, 1, 7, 9] },
+            { "ref": { "objId": 8, "generation": 0 }, "matrix": [1, 0, 0, 1, 0, 0] }
+          ]
+        }
+      ]
+    },
+    "paint-content-tolerance.pdf": {
+      "description": "/Contents array of two streams (graphics state carries over), a Q without q, Do of a missing name, of a /PS XObject and of a string, an inline image. Painted: Im1 (6) and the stencil mask (9). Im2 (7) is a resource that is never painted.",
+      "pages": [
+        {
+          "paints": [
+            { "ref": { "objId": 6, "generation": 0 }, "matrix": [10, 0, 0, 10, 0, 0] },
+            { "ref": { "objId": 9, "generation": 0 }, "matrix": [1, 0, 0, 1, 0, 0] }
+          ]
+        }
+      ]
+    },
+    "paint-malformed-operands.pdf": {
+      "description": "cm with four numbers (page 0), with a name among its operands (page 1), with seven numbers (page 2); page 3 is well-formed.",
+      "pages": [
+        { "error": "INVALID_INPUT" },
+        { "error": "INVALID_INPUT" },
+        { "error": "INVALID_INPUT" },
+        { "paints": [{ "ref": { "objId": 11, "generation": 0 }, "matrix": [100, 0, 0, 100, 50, 600] }] }
+      ]
+    },
+    "paint-unreadable-forms.pdf": {
+      "description": "A form that draws itself (page 0), two forms that draw each other (page 1), a form /Matrix of four numbers (page 2), 1,111,110 XObject draws (page 3); page 4 draws a well-formed form with Im1 (23).",
+      "pages": [
+        { "error": "INVALID_INPUT" },
+        { "error": "INVALID_INPUT" },
+        { "error": "INVALID_INPUT" },
+        { "error": "INVALID_INPUT" },
+        { "paints": [{ "ref": { "objId": 23, "generation": 0 }, "matrix": [1, 0, 0, 1, 0, 0] }] }
+      ]
+    },
+    "paint-unreadable-content.pdf": {
+      "description": "A content stream with damaged Flate data (page 0), one with an unterminated string (page 1); page 2 is well-formed.",
+      "pages": [
+        { "error": "INVALID_INPUT" },
+        { "error": "INVALID_INPUT" },
+        { "paints": [{ "ref": { "objId": 9, "generation": 0 }, "matrix": [100, 0, 0, 100, 50, 600] }] }
+      ]
+    }
+  }
+}
