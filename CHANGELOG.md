@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.4.0 (unreleased)
+
+Additive to 0.3.1: every existing field and method keeps its type and value.
+Closes the limitation 0.3.1 names ("painted images per page are not reported
+yet").
+
+### Added
+- `PdfDocument.getImagePaints(pageIndex): Result<ImagePaint[]>`: where a page
+  paints image XObjects, in paint order, as `{ ref, matrix }` with the current
+  transformation matrix at each `Do`. Follows `q`/`Q`/`cm` through the page's
+  content streams and nested form XObjects (their `/Matrix`; a form without
+  `/Resources` uses the page's). No image is decoded. Exported type
+  `ImagePaint`.
+- `PageInfo.userUnit`: `/UserUnit`, `1` when absent, `null` when not a positive
+  number. Needed to turn a paint matrix into a physical size.
+
+### Contract of `getImagePaints`
+- All paints of the page or an error, never some of them. `INVALID_INPUT` when
+  the page index is out of range and when the content cannot be read reliably:
+  undecodable content, anything qpdf's content parser recovers from with a
+  warning, a `cm` without exactly six numbers, a form XObject that draws
+  itself or has a malformed `/Matrix`, more than 100,000 XObject draws on one
+  page. Other pages are unaffected. (`getImages()` keeps its 0.1.0 behaviour
+  of returning what it found.)
+- Tolerated, because every viewer treats it alike: a `Q` without `q`, and `Do`
+  of something that is neither an image nor a form.
+
+### Known limitations
+- Not reported: inline images, and images painted through tiling patterns,
+  Type 3 glyphs, annotation appearances or soft-mask groups. An image painted
+  only this way has no paint; one painted both ways has only the `Do` paints.
+- Clipping and optional content are not evaluated.
+- The strictness about qpdf warnings is checked against synthetic fixtures and
+  a handful of real PDFs only; how often real content trips it is not measured
+  yet.
+
 ## 0.3.1 (unreleased)
 
 Additive to 0.3.0, with one observable change: `getImages()` now also lists
